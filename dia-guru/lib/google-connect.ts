@@ -21,7 +21,7 @@ export async function connectGoogleCalendar() {
 
   const clientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
   if (!clientId) throw new Error('Missing EXPO_PUBLIC_GOOGLE_CLIENT_ID');
-
+  //console.log('Using Google Client ID:', clientId);
   const redirectUri =
     process.env.EXPO_PUBLIC_GOOGLE_REDIRECT_URI ??
     'https://wnjykvdliwjeeytbfeux.functions.supabase.co/oauth-cb';

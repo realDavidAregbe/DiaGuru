@@ -235,10 +235,7 @@ function isRoutineKind(kind: string | null | undefined) {
 function normalizeRoutineCapture(input: CaptureEntryRow, options: { referenceNow: Date; timezone?: string }) {
   // Normalize sleep/meals into movable night/mealtime windows with soft start and no auto-freeze.
   const capture = { ...input };
-  const tz = options.timezone ?? "UTC";
-
-  const refNow = options.referenceNow ?? new Date();
-  const baseDate = new Date(refNow);
+  const { referenceNow } = options;
 
   const isSleep = capture.task_type_hint === "routine.sleep" || capture.extraction_kind === "routine.sleep";
   const isMeal = capture.task_type_hint === "routine.meal" || capture.extraction_kind === "routine.meal";
@@ -249,19 +246,50 @@ function normalizeRoutineCapture(input: CaptureEntryRow, options: { referenceNow
   const userLocked = Boolean(capture.manual_touch_at) || Boolean(capture.freeze_until);
 
   if (isSleep) {
-    const nightStart = new Date(baseDate);
-    nightStart.setHours(22, 0, 0, 0);
-    const nightEnd = new Date(nightStart);
-    nightEnd.setDate(nightEnd.getDate() + 1);
-    nightEnd.setHours(7, 30, 0, 0);
+    try {
+      // Use proper timezone conversion instead of manual offset math
+      const timezone = options.timezone ?? "UTC";
 
-    // If existing window is day-time or missing, replace with night window.
-    capture.constraint_type = "window";
-    capture.window_start = capture.window_start ?? nightStart.toISOString();
-    capture.window_end = capture.window_end ?? nightEnd.toISOString();
-    capture.constraint_time = capture.window_start;
-    capture.constraint_end = capture.window_end;
-    capture.deadline_at = capture.deadline_at ?? capture.window_end;
+      console.log("[NORMALIZE] Sleep task detected, timezone:", timezone);
+
+      const nightStart = buildZonedDateTime({
+        timezone,
+        reference: referenceNow,
+        hour: 22,
+        minute: 0,
+      });
+
+      console.log("[NORMALIZE] nightStart calculated:", nightStart);
+
+      const nightEnd = buildZonedDateTime({
+        timezone,
+        reference: new Date(referenceNow.getTime() + 24 * 60 * 60 * 1000), // Force next day reference
+        hour: 7,
+        minute: 30,
+        dayOffset: 0,  // Don't add extra day since reference is already next day
+      });
+
+      console.log("[NORMALIZE] nightEnd calculated:", nightEnd);
+
+      // FORCE all sleep values
+      capture.constraint_type = "window";
+      capture.window_start = nightStart;
+      capture.window_end = nightEnd;
+      capture.constraint_time = nightStart;
+      capture.constraint_end = nightEnd;
+
+      console.log("[NORMALIZE] Final sleep capture:", {
+        window_start: capture.window_start,
+        window_end: capture.window_end,
+      });
+
+      // Set deadline to end of sleep window
+      capture.deadline_at = capture.deadline_at ?? capture.window_end;
+    } catch (error) {
+      console.error("[NORMALIZE] Error in sleep normalization:", error);
+      // Keep original values on error
+    }
+
     capture.start_flexibility = "soft";
     capture.duration_flexibility = "fixed";
     capture.cannot_overlap = true;
@@ -272,10 +300,16 @@ function normalizeRoutineCapture(input: CaptureEntryRow, options: { referenceNow
   } else if (isMeal) {
     // Default meal window: 12:00-14:00 local if none provided.
     if (!capture.window_start || !capture.window_end) {
-      const mealStart = new Date(baseDate);
-      mealStart.setHours(12, 0, 0, 0);
-      const mealEnd = new Date(mealStart);
-      mealEnd.setHours(14, 0, 0, 0);
+      const localYear = localDate.getUTCFullYear();
+      const localMonth = localDate.getUTCMonth();
+      const localDay = localDate.getUTCDate();
+
+      const localMealStartMs = Date.UTC(localYear, localMonth, localDay, 12, 0, 0, 0);
+      const localMealEndMs = Date.UTC(localYear, localMonth, localDay, 14, 0, 0, 0);
+
+      const mealStart = new Date(localMealStartMs - offsetMinutes * 60000);
+      const mealEnd = new Date(localMealEndMs - offsetMinutes * 60000);
+
       capture.window_start = mealStart.toISOString();
       capture.window_end = mealEnd.toISOString();
       capture.constraint_type = "window";
@@ -290,6 +324,15 @@ function normalizeRoutineCapture(input: CaptureEntryRow, options: { referenceNow
     }
   }
 
+  console.log("[NORMALIZE] Returning capture:", {
+    task_type_hint: capture.task_type_hint,
+    constraint_type: capture.constraint_type,
+    window_start: capture.window_start,
+    window_end: capture.window_end,
+    constraint_time: capture.constraint_time,
+    constraint_end: capture.constraint_end,
+  });
+
   return capture;
 }
 
@@ -299,12 +342,14 @@ export async function handler(req: Request) {
     if (!auth) return json({ error: "Missing Authorization" }, 401);
 
     const body = await req.json().catch(() => ({}));
+    const now = new Date();
     const captureId = body.captureId as string | undefined;
     const action = (body.action as "schedule" | "reschedule" | "complete") ?? "schedule";
     const timezoneOffsetMinutes =
       typeof body.timezoneOffsetMinutes === "number" && Number.isFinite(body.timezoneOffsetMinutes)
         ? body.timezoneOffsetMinutes
         : null;
+    const timezone = typeof body.timezone === "string" ? body.timezone : null;
 
     if (!captureId) return json({ error: "captureId required" }, 400);
 
@@ -367,22 +412,42 @@ export async function handler(req: Request) {
         constraint_end: normalizedCapture.constraint_end,
         window_start: normalizedCapture.window_start,
         window_end: normalizedCapture.window_end,
+        deadline_at: normalizedCapture.deadline_at,
         start_flexibility: normalizedCapture.start_flexibility,
         duration_flexibility: normalizedCapture.duration_flexibility,
         cannot_overlap: normalizedCapture.cannot_overlap,
         time_pref_time_of_day: normalizedCapture.time_pref_time_of_day,
         freeze_until: normalizedCapture.freeze_until,
       }).eq("id", capture.id);
+
+      // Verify DB update worked
+      const { data: dbVerification } = await admin
+        .from("capture_entries")
+        .select("window_start, window_end, constraint_time, constraint_end, deadline_at")
+        .eq("id", capture.id)
+        .single();
+      console.log("[DEBUG] DB after update:", dbVerification);
+
       capture.constraint_type = normalizedCapture.constraint_type;
       capture.constraint_time = normalizedCapture.constraint_time;
       capture.constraint_end = normalizedCapture.constraint_end;
       capture.window_start = normalizedCapture.window_start;
       capture.window_end = normalizedCapture.window_end;
+      capture.deadline_at = normalizedCapture.deadline_at;
       capture.start_flexibility = normalizedCapture.start_flexibility;
       capture.duration_flexibility = normalizedCapture.duration_flexibility;
       capture.cannot_overlap = normalizedCapture.cannot_overlap;
       capture.time_pref_time_of_day = normalizedCapture.time_pref_time_of_day;
       capture.freeze_until = normalizedCapture.freeze_until;
+
+      console.log("[NORMALIZE] After DB update, capture values:", {
+        captureId: capture.id,
+        constraint_type: capture.constraint_type,
+        window_start: capture.window_start,
+        window_end: capture.window_end,
+        constraint_time: capture.constraint_time,
+        constraint_end: capture.constraint_end,
+      });
     }
 
     const calendarClient = await resolveCalendarClient(admin, userId, clientId, clientSecret);
@@ -453,9 +518,8 @@ export async function handler(req: Request) {
     );
     const preferredStartIso = typeof body.preferredStart === "string" ? body.preferredStart : null;
     const preferredEndIso = typeof body.preferredEnd === "string" ? body.preferredEnd : null;
-    const timezone = typeof body.timezone === "string" ? body.timezone : null;
+
     const offsetMinutes = timezoneOffsetMinutes ?? 0;
-    const now = new Date();
 
     const durationMinutes = Math.max(5, Math.min(capture.estimated_minutes ?? 30, 480));
     const planId = crypto.randomUUID();
@@ -3917,6 +3981,68 @@ function json(data: unknown, status = 200) {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+// Timezone helper functions
+function buildZonedDateTime(args: {
+  timezone: string;
+  reference: Date;
+  hour: number;
+  minute: number;
+  dayOffset?: number;
+}) {
+  const { timezone, reference, hour, minute } = args;
+  const dayOffset = args.dayOffset ?? computeDayOffset(reference, timezone, hour, minute);
+  const dateParts = getLocalDateParts(reference, timezone);
+  const utcGuess = new Date(
+    Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day + dayOffset, hour, minute, 0, 0),
+  );
+  const offsetMinutes = getTimezoneOffsetMinutes(utcGuess, timezone);
+  return new Date(utcGuess.getTime() - offsetMinutes * 60000).toISOString();
+}
+
+function computeDayOffset(reference: Date, timezone: string, targetHour: number, targetMinute: number) {
+  const { hour, minute } = getLocalTimeParts(reference, timezone);
+  if (hour > targetHour) return 1;
+  if (hour === targetHour && minute >= targetMinute) return 1;
+  return 0;
+}
+
+function getLocalDateParts(reference: Date, timezone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(reference);
+  const lookup = (type: "year" | "month" | "day") =>
+    parseInt(parts.find((p) => p.type === type)?.value ?? "0", 10);
+  return {
+    year: lookup("year"),
+    month: lookup("month"),
+    day: lookup("day"),
+  };
+}
+
+function getLocalTimeParts(reference: Date, timezone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const [hourStr, minuteStr] = formatter.format(reference).split(":");
+  return {
+    hour: parseInt(hourStr, 10),
+    minute: parseInt(minuteStr, 10),
+  };
+}
+
+function getTimezoneOffsetMinutes(date: Date, timeZone: string) {
+  const localDate = new Date(date.toLocaleString("en-US", { timeZone }));
+  const utcDate = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
+  return (localDate.getTime() - utcDate.getTime()) / 60000;
 }
 
 export const __test__ = {

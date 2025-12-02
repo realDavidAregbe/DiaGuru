@@ -4,16 +4,16 @@
 - Added structured request logging in scheduler (`schedule.request`, `schedule.success`, `schedule.conflict`) capturing capture id/content, constraints, flexibility, slots/overlap, conflicts, and notes.
 - Added parsing summary log `[dg.parse] summary` with extracted minutes, constraints, flexibility, importance, time prefs, and kind to baseline DeepSeek output.
 
-## Step 2 - Normalize Routine Tasks (in progress)
+## Step 2 - Normalize Routine Tasks (completed)
 - Implemented on-the-fly routine normalization in `supabase/functions/schedule-capture/index.ts` before scheduling:
   - Detect `routine.sleep`/`routine.meal` (task_type_hint or extraction_kind).
   - Sleep: convert to a night window (22:00–07:30 next day) if missing/incorrect, set `constraint_type=window`, soft start, fixed duration, `cannot_overlap=true`, default time_pref `night`, clear `freeze_until` if not user-locked.
   - Meal: default window 12:00–14:00 if missing, set soft start + fixed duration, clear `freeze_until` if not user-locked.
   - Normalize is persisted back to `capture_entries` so wrongly placed daytime sleep blocks should slide to night on next schedule/reschedule.
-
-Pending for Step 2:
-- Broader time-of-day defaults beyond routines (scheduled for Step 3).
-- DB cleanup script for existing bad routines (considered after observing new behavior).
+- Verified `scheduler-config.ts` for routine priority scaling (sleep: 0.7, meal: 0.5) and working-hours bypass.
+- Created and ran `scripts/cleanup-routines.js` to normalize existing routine tasks (cleared freeze locks and reset status for rescheduling).
+- Fixed `ReferenceError: Cannot access 'now' before initialization` in `schedule-capture` function.
+- Fixed Routine Window calculation to correctly use user's local time (via `offsetMinutes`) instead of UTC defaults, preventing `slot_exceeds_deadline` errors for sleep/meal tasks.
 
 How to test (Step 2):
 - Create or reschedule a sleep capture with a bad start_time in the day (e.g., “Sleep today at 12am” saved as start_time 06:00Z). Run `schedule-capture` for it; verify it moves to a night window and `freeze_until` is cleared unless manually locked.
