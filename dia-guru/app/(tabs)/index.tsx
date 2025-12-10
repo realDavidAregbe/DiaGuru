@@ -1282,7 +1282,7 @@ export default function HomeTab() {
                   (scheduling || pending.length === 0) && styles.secondaryButtonTextDisabled,
                 ]}
               >
-                Re-run scheduling
+                Re-run Sheduling
               </Text>
             </TouchableOpacity>
           </View>
