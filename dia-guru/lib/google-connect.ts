@@ -16,7 +16,10 @@ export async function connectGoogleCalendar() {
   const {
     data: { session },
   } = await supabase.auth.getSession();
+  
 
+ 
+  console.log("access_token", session?.access_token);
   if (!session?.access_token) throw new Error('Not signed in');
 
   const clientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;

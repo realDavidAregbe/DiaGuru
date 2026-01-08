@@ -27,3 +27,7 @@ How to test (Step 2):
 How to test (Step 3):
 - Create tasks with `time_pref_time_of_day` set (e.g., “Code tonight”, “Apply before bed”, “Morning workout”) and schedule; verify slots land in the preferred band. Check logs to see preferred bands used.
 - For routine.tasks, ensure defaults apply: sleep targets night band, meals target mealtime bands when no explicit preference.
+
+
+
+## Next steps: understand logic for computeBusyIntervals and findNextAvailableSlot so that i can debug

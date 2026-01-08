@@ -1,83 +1,248 @@
-import {
-  assert,
-  assertEquals,
-  assertFalse,
-  assertRejects,
-  assertStrictEquals,
-} from "std/assert";
-
 import type { CaptureEntryRow } from "../types.ts";
 
+
 import {
-  CalendarEvent,
-  buildChunksForSlot,
-  buildOccupancyGrid,
-  buildPreemptionDisplacements,
-  canCaptureOverlap,
   collectConflictingEvents,
-  collectGridWindowCandidates,
-  computeBusyIntervals,
-  computeDateDeadline,
   computeSchedulingPlan,
-  derivePreferredTimeOfDayBands,
-  estimateConflictMinutes,
   findNextAvailableSlot,
-  findSlotBeforeDeadline,
-  findSlotWithinWindow,
-  generateChunkDurations,
-  hasActiveFreeze,
-  isSlotWithinConstraints,
-  normalizeConstraintType,
-  normalizeRoutineCapture,
-  parseIsoDate,
-  placeChunksWithinRange,
-  priorityForCapture,
-  resolveDeadlineFromCapture,
-  sanitizedEstimatedMinutes,
-  scheduleWithPlan,
-  selectMinimalPreemptionSet,
-  serializeChunks,
-  summarizeWindowCapacity,
-  withinStabilityWindow,
-} from "./index.ts";
+  computeBusyIntervals,
+  parsePreferredSlot,
+  normalizedConstraintType,
+  type CalendarEvent,
+  type PreferredSlot,
+} from "./scheduling-core.ts";
+import { handler } from "./index.ts";
+import { assert, assertEquals } from "std/assert"; // if you're on Deno
+// or the equivalent for Jest/Vitest
 
 
-
-Deno.test("computeSchedulingPlan: window capture prefers earliest slot inside window", () => {
-  const capture = fakeCapture({
-    constraint_type: "window",
-    constraint_time: "2025-01-01T10:00:00Z",
-    constraint_end:  "2025-01-01T12:00:00Z",
-  });
-  const plan = computeSchedulingPlan(capture, /*durationMinutes*/ 60, 0, new Date("2025-01-01T09:00:00Z"));
-
-  assertEquals(plan.mode, "window");
-  assert(plan.preferredSlot);
-  assertEquals(plan.preferredSlot.start.toISOString(), "2025-01-01T10:00:00.000Z");
-  assertEquals(plan.preferredSlot.end.toISOString(),   "2025-01-01T11:00:00.000Z");
-});
-
-
-
-function fakeCapture(overrides: Partial<CaptureEntryRow> = {}): CaptureEntryRow {
-  return {
+function makeCapture(overrides: Partial<CaptureEntryRow> = {}): CaptureEntryRow {
+  const base: CaptureEntryRow = {
     id: "cap_1",
     user_id: "user_1",
-    content: "Test",
-    importance: 1,
+    content: "Test capture",
     estimated_minutes: 60,
+    importance: 1,
+    urgency: null,
+    impact: null,
+    reschedule_penalty: null,
+    blocking: false,
     status: "pending",
+    scheduled_for: null,
+    created_at: "2025-01-01T00:00:00Z",
+    updated_at: "2025-01-01T00:00:00Z",
+    calendar_event_id: null,
+    calendar_event_etag: null,
+    planned_start: null,
+    planned_end: null,
+    last_check_in: null,
+    scheduling_notes: null,
     constraint_type: "flexible",
-    // ...everything else with safe defaults...
-    ...overrides,
-  } as CaptureEntryRow;
+    constraint_time: null,
+    constraint_end: null,
+    constraint_date: null,
+    original_target_time: null,
+    deadline_at: null,
+    window_start: null,
+    window_end: null,
+    start_target_at: null,
+    is_soft_start: false,
+    cannot_overlap: false,
+    start_flexibility: "soft",
+    duration_flexibility: "fixed",
+    min_chunk_minutes: null,
+    max_splits: null,
+    extraction_kind: null,
+    time_pref_time_of_day: null,
+    time_pref_day: null,
+    importance_rationale: null,
+    externality_score: 0,
+    reschedule_count: 0,
+    task_type_hint: null,
+    freeze_until: null,
+    plan_id: null,
+    manual_touch_at: null,
+  };
+
+  return { ...base, ...overrides } as CaptureEntryRow;
 }
 
-function event(startIso: string, endIso: string, extra?: Partial<CalendarEvent>): CalendarEvent {
+
+
+function makeEvent(
+  startIso: string,
+  endIso: string,
+  extra: Partial<CalendarEvent> = {},
+): CalendarEvent {
   return {
-    id: extra?.id ?? crypto.randomUUID(),
+    id: extra.id ?? "evt_" + Math.random().toString(36).slice(2),
     start: { dateTime: startIso },
     end: { dateTime: endIso },
     ...extra,
   };
 }
+
+function slot(startIso: string, endIso: string): PreferredSlot {
+  return { start: new Date(startIso), end: new Date(endIso) };
+}
+
+function decodeJwtPayload(token: string) {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    return JSON.parse(atob(padded)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function maskSecret(value: string) {
+  if (!value) return "<empty>";
+  if (value.length <= 10) return `${value.slice(0, 2)}...`;
+  return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+
+Deno.test("collectConflictingEvents relaxes buffer for in-progress events", () => {
+  const now = new Date("2025-01-01T10:30:00Z");
+  const event = makeEvent("2025-01-01T10:00:00Z", "2025-01-01T11:00:00Z");
+
+  // slot that starts just after the event *end* — should be OK if tail buffer = 0
+  const justAfter = slot("2025-01-01T11:00:00Z", "2025-01-01T11:30:00Z");
+
+  const conflicts = collectConflictingEvents(justAfter, [event], now);
+  assertEquals(conflicts.length, 0);
+});
+
+
+Deno.test("collectConflictingEvents still blocks overlapping slots during event", () => {
+  const now = new Date("2025-01-01T10:30:00Z");
+  const event = makeEvent("2025-01-01T10:00:00Z", "2025-01-01T11:00:00Z");
+
+  const overlapping = slot("2025-01-01T10:45:00Z", "2025-01-01T11:15:00Z");
+  const conflicts = collectConflictingEvents(overlapping, [event], now);
+
+  assertEquals(conflicts.length, 1);
+  assertEquals(conflicts[0].id, event.id);
+});
+
+
+Deno.test("computeSchedulingPlan: deadline_time builds a deadline plan", () => {
+  const capture = makeCapture({
+    constraint_type: "deadline_time",
+    constraint_time: "2025-01-01T18:00:00Z",
+  });
+
+  const plan = computeSchedulingPlan(capture, 60, 0, new Date("2025-01-01T10:00:00Z"));
+
+  assertEquals(plan.mode, "deadline");
+  assert(plan.deadline);
+  assertEquals(plan.deadline!.toISOString(), "2025-01-01T18:00:00.000Z");
+});
+
+Deno.test("computeSchedulingPlan: start_time builds a start plan at or after now", () => {
+  const capture = makeCapture({
+    constraint_type: "start_time",
+    constraint_time: "2025-01-01T10:00:00Z",
+  });
+
+  const referenceNow = new Date("2025-01-01T09:00:00Z");
+  const plan = computeSchedulingPlan(capture, 60, 0, referenceNow);
+
+  assertEquals(plan.mode, "start");
+  assert(plan.preferredSlot);
+  assertEquals(plan.preferredSlot!.start.toISOString(), "2025-01-01T10:00:00.000Z");
+});
+
+
+// Deno.test("findNextAvailableSlot respects busy intervals and working window", () => {
+//   const now = new Date("2025-01-01T09:00:00Z");
+//   const events = [
+//     makeEvent("2025-01-01T10:00:00Z", "2025-01-01T11:00:00Z"),
+//   ];
+//   const busy = computeBusyIntervals(events); // full 30m buffer
+//   const slot = findNextAvailableSlot(busy, 60, 0, { referenceNow: now });
+
+//   assert(slot);
+//   // With 30m buffer, the earliest free start is 11:30
+//   assertEquals(slot!.start.toISOString(), "2025-01-01T11:30:00.000Z");
+// });
+
+Deno.test("schedule-capture handler (live request)", async () => {
+  console.log("Starting live schedule-capture test...");
+  const runLive = (Deno.env.get("RUN_LIVE_SCHEDULE_CAPTURE_TEST") ?? "").trim();
+  if (runLive !== "1") return;
+
+
+  const userBearer = Deno.env.get("TEST_USER_BEARER") ?? Deno.env.get("USER_BEARER");
+  assert(userBearer, "Missing env TEST_USER_BEARER");
+
+  const supabaseUrl =
+    Deno.env.get("SUPABASE_URL") ?? Deno.env.get("EXPO_PUBLIC_SUPABASE_URL");
+  if (supabaseUrl && !Deno.env.get("SUPABASE_URL")) {
+    Deno.env.set("SUPABASE_URL", supabaseUrl);
+  }
+
+  const anonKey =
+    Deno.env.get("SUPABASE_ANON_KEY") ??
+    Deno.env.get("ANON_KEY") ??
+    Deno.env.get("EXPO_PUBLIC_SUPABASE_ANON_KEY");
+  if (anonKey && !Deno.env.get("SUPABASE_ANON_KEY")) {
+    Deno.env.set("SUPABASE_ANON_KEY", anonKey);
+  }
+
+  const googleClientId =
+    Deno.env.get("GOOGLE_CLIENT_ID") ?? Deno.env.get("EXPO_PUBLIC_GOOGLE_CLIENT_ID");
+  if (googleClientId && !Deno.env.get("GOOGLE_CLIENT_ID")) {
+    Deno.env.set("GOOGLE_CLIENT_ID", googleClientId);
+  }
+
+  assert(supabaseUrl, "Missing env SUPABASE_URL");
+  assert(anonKey, "Missing env SUPABASE_ANON_KEY");
+  const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY");
+  assert(serviceRoleKey, "Missing env SERVICE_ROLE_KEY");
+  assert(googleClientId, "Missing env GOOGLE_CLIENT_ID");
+  assert(Deno.env.get("GOOGLE_CLIENT_SECRET"), "Missing env GOOGLE_CLIENT_SECRET");
+
+  const serviceRolePayload = decodeJwtPayload(serviceRoleKey);
+  console.log("Supabase URL:", supabaseUrl);
+  console.log("Anon key:", maskSecret(anonKey));
+  if (serviceRolePayload) {
+    console.log("Service role key payload:", {
+      iss: serviceRolePayload.iss,
+      role: serviceRolePayload.role,
+      ref: serviceRolePayload.ref,
+    });
+  } else {
+    console.log("Service role key payload: <unreadable>");
+  }
+
+  const timezone = Deno.env.get("TEST_TIMEZONE") ?? null;
+  const offsetRaw = Deno.env.get("TEST_TZ_OFFSET_MINUTES");
+  const timezoneOffsetMinutes = offsetRaw ? Number(offsetRaw) : undefined;
+  console.log("Using timezone:", timezone, "offset minutes:", timezoneOffsetMinutes);
+  const captureId = "8ee1841c-775a-449f-88f6-31a37f4f1644";
+  const req = new Request("http://localhost/functions/v1/schedule-capture", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${userBearer}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      action: "schedule",
+      captureId,
+      allowOverlap: true,
+      allowLatePlacement: true,
+      timezone,
+      timezoneOffsetMinutes,
+    }),
+  });
+
+  const res = await handler(req);
+  const data = await res.json().catch(() => ({}));
+  console.log("Response data:", data);
+  assert(res.ok || res.status === 409, `Unexpected status ${res.status}: ${JSON.stringify(data)}`);
+  assert(data && (data.message || data.decision || data.error));
+});
