@@ -104,6 +104,29 @@ type CaptureMapping = {
   start_target_at: string | null;
   is_soft_start: boolean;
   task_type_hint: string | null;
+
+  scheduled_source?: "explicit" | "inferred" | null;
+  scheduled_precision?: "exact" | "approximate" | null;
+  execution_window_relation?: "before_deadline" | "after_deadline" | "around_scheduled" | "between" | "on_day" | "anytime" | null;
+  execution_window_source?: "explicit" | "inferred" | "default" | null;
+  time_preferences?: { time_of_day?: "morning" | "afternoon" | "evening" | "night" | null; day?: "today" | "tomorrow" | "specific_date" | "any" | null } | null;
+  importance?: {
+    urgency?: 1 | 2 | 3 | 4 | 5;
+    impact?: 1 | 2 | 3 | 4 | 5;
+    reschedule_penalty?: 0 | 1 | 2 | 3;
+    blocking?: boolean;
+    rationale?: string;
+  } | null;
+  flexibility?: {
+    cannot_overlap?: boolean;
+    start_flexibility?: "hard" | "soft" | "anytime";
+    duration_flexibility?: "fixed" | "split_allowed";
+    min_chunk_minutes?: number | null;
+    max_splits?: number | null;
+  } | null;
+  missing?: string[] | null;
+  clarifying_question?: string | null;
+  notes?: string[] | null;
 };
 
 const DEFAULT_TIMEZONE = "UTC";
@@ -757,7 +780,7 @@ function buildExtractionPrompts(input: { content: string; timezone: string; refe
   return { systemPrompt, userPrompt };
 }
 
-function normalizeExtraction(obj: any): DiaGuruTaskExtraction | null {
+export function normalizeExtraction(obj: any): DiaGuruTaskExtraction | null {
   if (!obj || typeof obj !== "object") return null;
   const s = (v: any) => (typeof v === "string" ? v : null);
   const n = (v: any) => {
@@ -838,7 +861,7 @@ function normalizeExtraction(obj: any): DiaGuruTaskExtraction | null {
   };
 }
 
-function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
+export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
   // Defaults
   let constraint_type: CaptureMapping["constraint_type"] = "flexible";
   let constraint_time: string | null = null;
@@ -891,7 +914,8 @@ function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
       ex.scheduled_time?.source === "inferred";
   }
 
-  return {
+
+   const captureMapping: CaptureMapping = {
     estimated_minutes: ex.estimated_minutes ?? null,
     constraint_type,
     constraint_time,
@@ -904,7 +928,21 @@ function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
     start_target_at,
     is_soft_start,
     task_type_hint,
+
+    // metadata
+    scheduled_source: ex.scheduled_time?.source ?? null,
+    scheduled_precision: ex.scheduled_time?.precision ?? null,
+    execution_window_relation: ex.execution_window?.relation ?? null,
+    execution_window_source: ex.execution_window?.source ?? null,
+    time_preferences: ex.time_preferences ?? null,
+    importance: ex.importance ?? null,
+    flexibility: ex.flexibility ?? null,
+    missing: Array.isArray(ex.missing) ? ex.missing.slice() : null,
+    clarifying_question: ex.clarifying_question ?? null,
+    notes: Array.isArray(ex.notes) ? ex.notes.slice() : null,
   };
+  return captureMapping;
+  
 }
 
 function captureProposalReason(ex: DiaGuruTaskExtraction): string {
@@ -1161,3 +1199,5 @@ function getTimezoneOffsetMinutes(date: Date, timeZone: string) {
   const utcDate = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
   return (localDate.getTime() - utcDate.getTime()) / 60000;
 }
+
+

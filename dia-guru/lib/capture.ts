@@ -21,6 +21,7 @@ export type Capture = {
   calendar_event_etag: string | null;
   last_check_in: string | null;
   scheduling_notes: string | null;
+  extraction_json: Record<string, unknown> | null;
   constraint_type: ConstraintType;
   constraint_time: string | null;
   constraint_end: string | null;
@@ -76,6 +77,7 @@ export type CaptureInput = {
   timePrefDay?: 'today' | 'tomorrow' | 'specific_date' | 'any' | null;
   importanceRationale?: string | null;
   schedulingNotes?: string | null;
+  extractionJson?: Record<string, unknown> | null;
   constraintType?: ConstraintType;
   constraintTime?: string | null;
   constraintEnd?: string | null;
@@ -121,8 +123,25 @@ function asBoolean(value: unknown, fallback = false) {
   return fallback;
 }
 
+function asJsonRecord(value: unknown): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === 'object') return value as Record<string, unknown>;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object') {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 function mapCaptureRow(row: Record<string, any>): Capture {
   const constraintType = normalizeConstraintType(row.constraint_type);
+  const extractionJson = asJsonRecord(row.extraction_json);
   const capture: Capture = {
     id: row.id,
     user_id: row.user_id,
@@ -141,6 +160,7 @@ function mapCaptureRow(row: Record<string, any>): Capture {
     calendar_event_etag: row.calendar_event_etag ?? null,
     last_check_in: row.last_check_in ?? null,
     scheduling_notes: row.scheduling_notes ?? null,
+    extraction_json: extractionJson,
     constraint_type: constraintType,
     constraint_time: row.constraint_time ?? null,
     constraint_end: row.constraint_end ?? null,
@@ -210,6 +230,21 @@ export type TaskExtraction = {
     source: 'explicit' | 'inferred' | 'default' | null;
   } | null;
   time_preferences: { time_of_day: 'morning' | 'afternoon' | 'evening' | 'night' | null; day: 'today' | 'tomorrow' | 'specific_date' | 'any' | null } | null;
+  importance?: {
+    urgency: 1 | 2 | 3 | 4 | 5;
+    impact: 1 | 2 | 3 | 4 | 5;
+    reschedule_penalty: 0 | 1 | 2 | 3;
+    blocking: boolean;
+    rationale: string;
+  } | null;
+  flexibility?: {
+    cannot_overlap: boolean;
+    start_flexibility: 'hard' | 'soft' | 'anytime';
+    duration_flexibility: 'fixed' | 'split_allowed';
+    min_chunk_minutes: number | null;
+    max_splits: number | null;
+  } | null;
+  kind?: 'task' | 'appointment' | 'call' | 'meeting' | 'study' | 'errand' | 'other' | null;
   missing: string[];
   clarifying_question: string | null;
   notes: string[];
@@ -228,6 +263,16 @@ export type CaptureMapping = {
   start_target_at: string | null;
   is_soft_start: boolean;
   task_type_hint: string | null;
+  scheduled_source?: 'explicit' | 'inferred' | null;
+  scheduled_precision?: 'exact' | 'approximate' | null;
+  execution_window_relation?: 'before_deadline' | 'after_deadline' | 'around_scheduled' | 'between' | 'on_day' | 'anytime' | null;
+  execution_window_source?: 'explicit' | 'inferred' | 'default' | null;
+  time_preferences?: { time_of_day?: 'morning' | 'afternoon' | 'evening' | 'night' | null; day?: 'today' | 'tomorrow' | 'specific_date' | 'any' | null } | null;
+  importance?: { urgency?: number; impact?: number; reschedule_penalty?: number; blocking?: boolean; rationale?: string } | null;
+  flexibility?: { cannot_overlap?: boolean; start_flexibility?: string; duration_flexibility?: string; min_chunk_minutes?: number | null; max_splits?: number | null } | null;
+  missing?: string[] | null;
+  clarifying_question?: string | null;
+  notes?: string[] | null;
   reason?: string;
 };
 
@@ -453,6 +498,7 @@ export async function addCapture(input: CaptureInput, userId?: string) {
     timePrefDay = null,
     importanceRationale = null,
     schedulingNotes = null,
+    extractionJson = null,
     constraintType = 'flexible',
     constraintTime = null,
     constraintEnd = null,
@@ -495,6 +541,7 @@ export async function addCapture(input: CaptureInput, userId?: string) {
       time_pref_day: timePrefDay,
       importance_rationale: importanceRationale,
       scheduling_notes: schedulingNotes,
+      extraction_json: extractionJson,
       user_id: targetUserId,
       constraint_type: constraintType,
       constraint_time: constraintTime,
