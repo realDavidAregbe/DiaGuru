@@ -163,7 +163,10 @@ export async function handler(req: Request) {
         plan_id: action.prev_plan_id,
         freeze_until: action.prev_freeze_until,
         reschedule_count: nextRescheduleCount,
-        scheduling_notes: "Restored via undo-plan.",
+        scheduling_notes: mergeSchedulingNotes(
+          capture.scheduling_notes,
+          "Restored via undo-plan.",
+        ),
       };
 
       await admin.from("capture_entries").update(updatedValues).eq("id", action.capture_id);
@@ -204,5 +207,29 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { "Content-Type": "application/json" },
+  });
+}
+
+function mergeSchedulingNotes(existing: string | null | undefined, note: string) {
+  const trimmed = note.trim();
+  if (!trimmed) return existing ?? null;
+  const timestamp = new Date().toISOString();
+  const nextFields: Record<string, unknown> = {
+    schedule_note: trimmed,
+    schedule_note_at: timestamp,
+  };
+  if (!existing) return JSON.stringify(nextFields);
+  try {
+    const parsed = JSON.parse(existing);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return JSON.stringify({
+        ...(parsed as Record<string, unknown>),
+        ...nextFields,
+      });
+    }
+  } catch {}
+  return JSON.stringify({
+    previous_note: existing,
+    ...nextFields,
   });
 }

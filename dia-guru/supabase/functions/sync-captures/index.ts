@@ -77,7 +77,7 @@ export async function handler(req: Request) {
     const { data: captureRows } = captureIds.length
       ? await admin
           .from("capture_entries")
-          .select("id, user_id, status, planned_start, planned_end, calendar_event_id, calendar_event_etag, freeze_until, manual_touch_at")
+          .select("id, user_id, status, planned_start, planned_end, calendar_event_id, calendar_event_etag, freeze_until, manual_touch_at, scheduling_notes")
           .eq("user_id", userId)
           .in("id", captureIds)
       : { data: [] as CaptureEntryRow[] };
@@ -89,11 +89,15 @@ export async function handler(req: Request) {
 
     const { data: scheduledRows } = await admin
       .from("capture_entries")
-      .select("id, user_id, status, planned_start, planned_end, calendar_event_id, calendar_event_etag, freeze_until, manual_touch_at")
+      .select("id, user_id, status, planned_start, planned_end, calendar_event_id, calendar_event_etag, freeze_until, manual_touch_at, scheduling_notes")
       .eq("user_id", userId)
       .eq("status", "scheduled");
 
     const scheduledCaptures = (scheduledRows ?? []) as CaptureEntryRow[];
+    const scheduledById = new Map<string, CaptureEntryRow>();
+    for (const row of scheduledCaptures) {
+      scheduledById.set(row.id, row);
+    }
 
     const scheduledUpdates: {
       id: string;
@@ -103,6 +107,7 @@ export async function handler(req: Request) {
       calendar_event_etag: string | null;
       manual_touch_at: string | null;
       freeze_until: string | null;
+      scheduling_notes: string | null;
     }[] = [];
     const pendingResets: { id: string }[] = [];
 
@@ -141,6 +146,7 @@ export async function handler(req: Request) {
           calendar_event_etag: eventEtag ?? null,
           manual_touch_at: manualTouchAt,
           freeze_until: freezeUntil,
+          scheduling_notes: mergeSchedulingNotes(capture.scheduling_notes, "Synced from Google Calendar."),
         });
       }
     }
@@ -166,7 +172,7 @@ export async function handler(req: Request) {
         .update({
           ...rest,
           status: "scheduled",
-          scheduling_notes: "Synced from Google Calendar.",
+          scheduling_notes: rest.scheduling_notes,
         })
         .eq("id", id)
         .eq("user_id", userId);
@@ -175,6 +181,11 @@ export async function handler(req: Request) {
     }
 
     for (const reset of pendingResets) {
+      const existing = scheduledById.get(reset.id);
+      const mergedNotes = mergeSchedulingNotes(
+        existing?.scheduling_notes ?? null,
+        "Google Calendar event missing; returned to queue.",
+      );
       const { error } = await admin
         .from("capture_entries")
         .update({
@@ -185,7 +196,7 @@ export async function handler(req: Request) {
           calendar_event_etag: null,
           manual_touch_at: null,
           freeze_until: null,
-          scheduling_notes: "Google Calendar event missing; returned to queue.",
+          scheduling_notes: mergedNotes,
         })
         .eq("id", reset.id)
         .eq("user_id", userId);
@@ -344,6 +355,30 @@ function extractGoogleError(payload: unknown) {
   }
 
   return null;
+}
+
+function mergeSchedulingNotes(existing: string | null | undefined, note: string) {
+  const trimmed = note.trim();
+  if (!trimmed) return existing ?? null;
+  const timestamp = new Date().toISOString();
+  const nextFields: Record<string, unknown> = {
+    schedule_note: trimmed,
+    schedule_note_at: timestamp,
+  };
+  if (!existing) return JSON.stringify(nextFields);
+  try {
+    const parsed = JSON.parse(existing);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return JSON.stringify({
+        ...(parsed as Record<string, unknown>),
+        ...nextFields,
+      });
+    }
+  } catch {}
+  return JSON.stringify({
+    previous_note: existing,
+    ...nextFields,
+  });
 }
 
 function json(data: unknown, status = 200) {

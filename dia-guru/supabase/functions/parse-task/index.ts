@@ -852,33 +852,43 @@ function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
   let is_soft_start = false;
   let task_type_hint: string | null = ex.kind ?? ex.title;
 
-  // Prioritize scheduled_time if present
-  if (ex.scheduled_time?.datetime) {
+  const scheduledAt = ex.scheduled_time?.datetime ?? null;
+  const scheduledExplicit = Boolean(
+    scheduledAt && ex.scheduled_time?.source === "explicit",
+  );
+  const windowRelation =
+    ex.execution_window?.relation === "between" ||
+    ex.execution_window?.relation === "on_day";
+  const windowStart = ex.execution_window?.start ?? null;
+  const windowEnd = ex.execution_window?.end ?? null;
+  const hasWindow = Boolean(windowRelation && (windowStart || windowEnd));
+  const hasDeadline = Boolean(ex.deadline?.datetime);
+
+  if (scheduledExplicit && scheduledAt) {
     constraint_type = "start_time";
-    constraint_time = ex.scheduled_time.datetime;
-    original_target_time = ex.scheduled_time.datetime;
-    start_target_at = ex.scheduled_time.datetime;
-    is_soft_start = ex.scheduled_time.precision === "approximate" || ex.scheduled_time.source === "inferred";
-  }
-
-  // Execution window explicit
-  if (ex.execution_window?.relation === "between" || ex.execution_window?.relation === "on_day") {
-    if (ex.execution_window.start || ex.execution_window.end) {
-      constraint_type = "window";
-      constraint_time = ex.execution_window.start ?? null;
-      constraint_end = ex.execution_window.end ?? null;
-      window_start = constraint_time;
-      window_end = constraint_end;
-    }
-  }
-
-  // Deadline semantics
-  if (ex.execution_window?.relation === "before_deadline" && ex.deadline?.datetime) {
+    constraint_time = scheduledAt;
+    original_target_time = scheduledAt;
+    start_target_at = scheduledAt;
+    is_soft_start = false;
+    deadline_at = hasDeadline ? ex.deadline!.datetime : deadline_at;
+  } else if (hasWindow) {
+    constraint_type = "window";
+    constraint_time = windowStart;
+    constraint_end = windowEnd;
+    window_start = windowStart;
+    window_end = windowEnd;
+  } else if (hasDeadline) {
     constraint_type = "deadline_time";
-    constraint_time = ex.deadline.datetime;
-    deadline_at = ex.deadline.datetime;
-    // Optionally provide a window end for schedulers that also use window
-    window_end = ex.deadline.datetime;
+    constraint_time = ex.deadline!.datetime;
+    deadline_at = ex.deadline!.datetime;
+    window_end = ex.deadline!.datetime;
+  } else if (scheduledAt) {
+    constraint_type = "start_time";
+    constraint_time = scheduledAt;
+    original_target_time = scheduledAt;
+    start_target_at = scheduledAt;
+    is_soft_start = ex.scheduled_time?.precision === "approximate" ||
+      ex.scheduled_time?.source === "inferred";
   }
 
   return {

@@ -402,6 +402,7 @@ export type ScheduleOptions = {
   preferredStart?: string;
   preferredEnd?: string;
   allowOverlap?: boolean;
+  allowRebalance?: boolean;
   timezone?: string;
   timezoneOffsetMinutes?: number;
 };

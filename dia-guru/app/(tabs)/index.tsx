@@ -127,6 +127,40 @@ function formatConflictMessage(decision: ScheduleDecision) {
   return lines.join('\n');
 }
 
+function extractScheduleReasons(capture: Capture) {
+  const fallback = 'Scheduled by DiaGuru based on your constraints.';
+  const raw = capture.scheduling_notes;
+  if (!raw || typeof raw !== 'string') return [fallback];
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      const scheduleExplanation = (parsed as Record<string, unknown>).schedule_explanation as
+        | { reasons?: unknown }
+        | undefined;
+      if (scheduleExplanation?.reasons && Array.isArray(scheduleExplanation.reasons)) {
+        const reasons = scheduleExplanation.reasons.map((reason) => String(reason)).filter((r) => r.trim().length > 0);
+        if (reasons.length > 0) return reasons;
+      }
+      const scheduleNote = (parsed as Record<string, unknown>).schedule_note;
+      if (typeof scheduleNote === 'string' && scheduleNote.trim().length > 0) {
+        return [scheduleNote.trim()];
+      }
+    }
+  } catch {
+    // fall through to raw fallback
+  }
+
+  const trimmed = raw.trim();
+  if (trimmed) return [trimmed];
+  return [fallback];
+}
+
+function showScheduleWhy(capture: Capture) {
+  const reasons = extractScheduleReasons(capture);
+  const body = reasons.map((reason) => `- ${reason}`).join('\n');
+  Alert.alert('Why this time?', body);
+}
+
 type DerivedConstraint = {
   constraintType: ConstraintType;
   constraintTime: string | null;
@@ -982,6 +1016,13 @@ export default function HomeTab() {
               }),
           },
           {
+            text: 'Make room',
+            onPress: () =>
+              scheduleTopCapture(captureId, 'schedule', {
+                allowRebalance: true,
+              }),
+          },
+          {
             text: 'Let DiaGuru decide',
             onPress: () => scheduleTopCapture(captureId, 'schedule'),
           },
@@ -1513,6 +1554,9 @@ function ScheduledCard({
           </Text>
         </TouchableOpacity>
       </View>
+      <TouchableOpacity style={styles.whyLink} onPress={() => showScheduleWhy(capture)}>
+        <Text style={styles.whyText}>Why this time?</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -1527,6 +1571,9 @@ function ScheduledSummaryCard({ capture }: { capture: Capture }) {
         {start ? start.toLocaleString() : 'Scheduled time unavailable'}
         {end ? ` -> ${ end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) } ` : ''}
       </Text>
+      <TouchableOpacity style={styles.whyLink} onPress={() => showScheduleWhy(capture)}>
+        <Text style={styles.whyText}>Why this time?</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -1748,6 +1795,8 @@ const styles = StyleSheet.create({
   captureTitleFlex: { flex: 1 },
   captureMeta: { color: '#6B7280' },
   captureActions: { flexDirection: 'row', gap: 12, marginTop: 12 },
+  whyLink: { alignSelf: 'flex-start', marginTop: 8 },
+  whyText: { color: '#2563EB', fontWeight: '600' },
   card: {
     padding: 12,
     borderRadius: 12,
