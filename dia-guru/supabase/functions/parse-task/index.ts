@@ -862,30 +862,32 @@ export function normalizeExtraction(obj: any): DiaGuruTaskExtraction | null {
 }
 
 export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
-  // Defaults
+  const scheduledAt = ex.scheduled_time?.datetime ?? null;
+
+  const windowRelation =
+    ex.execution_window?.relation === "between" ||
+    ex.execution_window?.relation === "on_day";
+  const windowStart = windowRelation ? (ex.execution_window?.start ?? null) : null;
+  const windowEnd   = windowRelation ? (ex.execution_window?.end ?? null) : null;
+
+  const hasWindow = Boolean(windowStart || windowEnd);
+  const hasDeadline = Boolean(ex.deadline?.datetime);
+
+  // Always preserve extracted facts (metadata), regardless of precedence
+  let deadline_at: string | null = ex.deadline?.datetime ?? null;
+  let window_start: string | null = windowStart;
+  let window_end: string | null = windowEnd;
+
+  // Driver constraint fields (what scheduling actually uses)
   let constraint_type: CaptureMapping["constraint_type"] = "flexible";
   let constraint_time: string | null = null;
   let constraint_end: string | null = null;
   let constraint_date: string | null = null;
   let original_target_time: string | null = null;
-  let deadline_at: string | null = ex.deadline?.datetime ?? null;
-  let window_start: string | null = null;
-  let window_end: string | null = null;
   let start_target_at: string | null = null;
   let is_soft_start = false;
-  let task_type_hint: string | null = ex.kind ?? ex.title;
 
-  const scheduledAt = ex.scheduled_time?.datetime ?? null;
-  const scheduledExplicit = Boolean(
-    scheduledAt && ex.scheduled_time?.source === "explicit",
-  );
-  const windowRelation =
-    ex.execution_window?.relation === "between" ||
-    ex.execution_window?.relation === "on_day";
-  const windowStart = ex.execution_window?.start ?? null;
-  const windowEnd = ex.execution_window?.end ?? null;
-  const hasWindow = Boolean(windowRelation && (windowStart || windowEnd));
-  const hasDeadline = Boolean(ex.deadline?.datetime);
+  const scheduledExplicit = Boolean(scheduledAt && ex.scheduled_time?.source === "explicit");
 
   if (scheduledExplicit && scheduledAt) {
     constraint_type = "start_time";
@@ -893,29 +895,27 @@ export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMappin
     original_target_time = scheduledAt;
     start_target_at = scheduledAt;
     is_soft_start = false;
-    deadline_at = hasDeadline ? ex.deadline!.datetime : deadline_at;
   } else if (hasWindow) {
     constraint_type = "window";
     constraint_time = windowStart;
     constraint_end = windowEnd;
-    window_start = windowStart;
-    window_end = windowEnd;
-  } else if (hasDeadline) {
+  } else if (hasDeadline && deadline_at) {
     constraint_type = "deadline_time";
-    constraint_time = ex.deadline!.datetime;
-    deadline_at = ex.deadline!.datetime;
-    window_end = ex.deadline!.datetime;
+    constraint_time = deadline_at;
+
+    // Only synthesize window_end from deadline if you don't already have a window end.
+    if (!window_end) window_end = deadline_at;
   } else if (scheduledAt) {
     constraint_type = "start_time";
     constraint_time = scheduledAt;
     original_target_time = scheduledAt;
     start_target_at = scheduledAt;
-    is_soft_start = ex.scheduled_time?.precision === "approximate" ||
+    is_soft_start =
+      ex.scheduled_time?.precision === "approximate" ||
       ex.scheduled_time?.source === "inferred";
   }
 
-
-   const captureMapping: CaptureMapping = {
+  return {
     estimated_minutes: ex.estimated_minutes ?? null,
     constraint_type,
     constraint_time,
@@ -927,9 +927,9 @@ export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMappin
     window_end,
     start_target_at,
     is_soft_start,
-    task_type_hint,
+    task_type_hint: ex.kind ?? ex.title,
 
-    // metadata
+    // metadata passthrough
     scheduled_source: ex.scheduled_time?.source ?? null,
     scheduled_precision: ex.scheduled_time?.precision ?? null,
     execution_window_relation: ex.execution_window?.relation ?? null,
@@ -941,9 +941,8 @@ export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMappin
     clarifying_question: ex.clarifying_question ?? null,
     notes: Array.isArray(ex.notes) ? ex.notes.slice() : null,
   };
-  return captureMapping;
-  
 }
+
 
 function captureProposalReason(ex: DiaGuruTaskExtraction): string {
   const bits: string[] = [];
