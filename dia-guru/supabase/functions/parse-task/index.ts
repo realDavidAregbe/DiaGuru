@@ -58,13 +58,13 @@ type DiaGuruTaskExtraction = {
   scheduled_time: { datetime: string | null; precision: "exact" | "approximate" | null; source: "explicit" | "inferred" | null } | null;
   execution_window: {
     relation:
-      | "before_deadline"
-      | "after_deadline"
-      | "around_scheduled"
-      | "between"
-      | "on_day"
-      | "anytime"
-      | null;
+    | "before_deadline"
+    | "after_deadline"
+    | "around_scheduled"
+    | "between"
+    | "on_day"
+    | "anytime"
+    | null;
     start: string | null;
     end: string | null;
     source: "explicit" | "inferred" | "default" | null;
@@ -123,6 +123,7 @@ export async function handler(req: Request) {
     }
 
     const timezone = (body.timezone ?? DEFAULT_TIMEZONE).trim() || DEFAULT_TIMEZONE;
+    const referenceNow = parseReferenceNow(body.now) ?? new Date();
     const deepseekApiKey = Deno.env.get("DEEPSEEK_API_KEY") ?? "";
     const deepseekEnabled = deepseekApiKey.length > 0;
 
@@ -157,7 +158,7 @@ export async function handler(req: Request) {
     try {
       deepseekAttempted = true;
       const started = performance.now();
-      const { systemPrompt, userPrompt } = buildExtractionPrompts({ content, timezone });
+      const { systemPrompt, userPrompt } = buildExtractionPrompts({ content, timezone, referenceNow });
 
       const rawEndpoint = Deno.env.get("DEEPSEEK_API_URL");
       const endpoint = !rawEndpoint || rawEndpoint.trim() === ""
@@ -184,7 +185,7 @@ export async function handler(req: Request) {
 
       const payload = await safeReadJson(res);
       lastPayload = payload;
-      try { console.log("parse-task deepseek response", { status: res.status, ok: res.ok, payload }); } catch {}
+      try { console.log("parse-task deepseek response", { status: res.status, ok: res.ok, payload }); } catch { }
       deepseekLatency = Math.round(performance.now() - started);
       if (!res.ok) {
         const snippet = typeof payload === "string" ? payload.slice(0, 200) : JSON.stringify(payload).slice(0, 200);
@@ -195,7 +196,7 @@ export async function handler(req: Request) {
 
       const raw = String(message);
       lastRawMessage = raw;
-      try { console.log("parse-task deepseek message", raw); } catch {}
+      try { console.log("parse-task deepseek message", raw); } catch { }
       let parsed: unknown;
       try {
         parsed = JSON.parse(raw);
@@ -236,6 +237,13 @@ export async function handler(req: Request) {
       extraction = normalizeExtraction(parsed);
       if (!extraction) throw new Error("DeepSeek JSON missing required fields");
 
+      applyRoutineNormalization({
+        extraction,
+        content,
+        timezone,
+        referenceNow,
+      });
+
       const mapping = mapExtractionToCapture(extraction);
       captureProposal = mapping;
 
@@ -253,7 +261,7 @@ export async function handler(req: Request) {
       deepseekErrored = true;
       const detail = describeError("DeepSeek extraction failed", error);
       notes.push(detail);
-      try { console.log("parse-task deepseek extraction failed", { error: String(error), lastRawMessage, lastPayload }); } catch {}
+      try { console.log("parse-task deepseek extraction failed", { error: String(error), lastRawMessage, lastPayload }); } catch { }
       return json({
         error: "DeepSeek extraction failed in conversational_strict mode.",
         details: detail,
@@ -308,6 +316,28 @@ export async function handler(req: Request) {
         },
       },
     };
+
+    try {
+      console.log("[dg.parse] summary", {
+        content,
+        estimated_minutes: extraction?.estimated_minutes ?? null,
+        constraint_type: response.structured.capture?.constraint_type ?? null,
+        constraint_time: response.structured.capture?.constraint_time ?? null,
+        window_start: response.structured.capture?.window_start ?? null,
+        window_end: response.structured.capture?.window_end ?? null,
+        deadline_at: response.structured.capture?.deadline_at ?? null,
+        start_flexibility: extraction?.flexibility?.start_flexibility ?? null,
+        duration_flexibility: extraction?.flexibility?.duration_flexibility ?? null,
+        cannot_overlap: extraction?.flexibility?.cannot_overlap ?? null,
+        urgency: extraction?.importance?.urgency ?? null,
+        impact: extraction?.importance?.impact ?? null,
+        reschedule_penalty: extraction?.importance?.reschedule_penalty ?? null,
+        blocking: extraction?.importance?.blocking ?? null,
+        time_pref_day: extraction?.time_preferences?.day ?? null,
+        time_pref_time_of_day: extraction?.time_preferences?.time_of_day ?? null,
+        kind: extraction?.kind ?? null,
+      });
+    } catch { }
 
     return json(response);
   } catch (error) {
@@ -672,7 +702,7 @@ function extractFirstJsonObject(text: string): string | null {
   if (first >= 0 && last > first) return text.slice(first, last + 1).trim();
   return null;
 }
-function buildExtractionPrompts(input: { content: string; timezone: string }) {
+function buildExtractionPrompts(input: { content: string; timezone: string; referenceNow: Date }) {
   const schema = `{
   "title": string | null,
   "estimated_minutes": number | null,
@@ -717,7 +747,13 @@ function buildExtractionPrompts(input: { content: string; timezone: string }) {
 }`;
   const rules = `Goals:\n- Interpret the user's text as a task they want to DO.\n- Distinguish clearly between DEADLINE (due/by) and SCHEDULED TIME (when to work).\n- Model how the work should be arranged in time (execution window).\n\nRules:\n- Respond ONLY with minified JSON.\n- If value is explicit or reasonably inferred, fill it; otherwise set null and add to \"missing\".\n- Infer a reasonable \"estimated_minutes\" when possible.\n- Use provided Timezone and Now for relative phrases.\n- Treat \"due/by/deadline/hand in\" as DEADLINES (set deadline.datetime/kind and execution_window.relation=before_deadline; execution_window.end=deadline).\n- \"at 3pm work on X\" → scheduled_time.datetime (+precision), execution_window.relation=around_scheduled.\n- \"between 3 and 5\" or \"tomorrow afternoon\" → execution_window.relation=between/on_day and fill start/end when resolvable.\n- time_preferences captures soft hints (morning/evening/tomorrow).\n- If anything is missing, include one concise clarifying_question.`;
   const systemPrompt = `You are a task extraction assistant for DiaGuru.\n${rules}\nSchema:\n${schema}`;
-  const userPrompt = `Text: """${input.content}"""\nTimezone: ${input.timezone}\nNow: ${new Date().toISOString()}\nWorkingHours: 08:00-22:00 (local)`;
+  let localNow = input.referenceNow.toISOString();
+  try {
+    localNow = input.referenceNow.toLocaleString("en-US", { timeZone: input.timezone, hour12: false });
+  } catch (e) {
+    localNow = `${input.referenceNow.toISOString()} (UTC)`;
+  }
+  const userPrompt = `Text: """${input.content}"""\nTimezone: ${input.timezone}\nNow (UTC): ${input.referenceNow.toISOString()}\nNow (Local): ${localNow}\nWorkingHours: 08:00-22:00 (local)`;
   return { systemPrompt, userPrompt };
 }
 
@@ -733,57 +769,57 @@ function normalizeExtraction(obj: any): DiaGuruTaskExtraction | null {
 
   const deadline = obj.deadline && typeof obj.deadline === "object"
     ? {
-        datetime: s(obj.deadline.datetime),
-        kind: one(obj.deadline.kind, ["hard", "soft"] as const),
-        source: one(obj.deadline.source, ["explicit", "inferred"] as const),
-      }
+      datetime: s(obj.deadline.datetime),
+      kind: one(obj.deadline.kind, ["hard", "soft"] as const),
+      source: one(obj.deadline.source, ["explicit", "inferred"] as const),
+    }
     : null;
   const scheduled_time = obj.scheduled_time && typeof obj.scheduled_time === "object"
     ? {
-        datetime: s(obj.scheduled_time.datetime),
-        precision: one(obj.scheduled_time.precision, ["exact", "approximate"] as const),
-        source: one(obj.scheduled_time.source, ["explicit", "inferred"] as const),
-      }
+      datetime: s(obj.scheduled_time.datetime),
+      precision: one(obj.scheduled_time.precision, ["exact", "approximate"] as const),
+      source: one(obj.scheduled_time.source, ["explicit", "inferred"] as const),
+    }
     : null;
   const execution_window = obj.execution_window && typeof obj.execution_window === "object"
     ? {
-        relation: one(obj.execution_window.relation, [
-          "before_deadline",
-          "after_deadline",
-          "around_scheduled",
-          "between",
-          "on_day",
-          "anytime",
-        ] as const),
-        start: obj.execution_window.start === null ? null : s(obj.execution_window.start),
-        end: obj.execution_window.end === null ? null : s(obj.execution_window.end),
-        source: one(obj.execution_window.source, ["explicit", "inferred", "default"] as const),
-      }
+      relation: one(obj.execution_window.relation, [
+        "before_deadline",
+        "after_deadline",
+        "around_scheduled",
+        "between",
+        "on_day",
+        "anytime",
+      ] as const),
+      start: obj.execution_window.start === null ? null : s(obj.execution_window.start),
+      end: obj.execution_window.end === null ? null : s(obj.execution_window.end),
+      source: one(obj.execution_window.source, ["explicit", "inferred", "default"] as const),
+    }
     : null;
   const time_preferences = obj.time_preferences && typeof obj.time_preferences === "object"
     ? {
-        time_of_day: one(obj.time_preferences.time_of_day, ["morning", "afternoon", "evening", "night"] as const),
-        day: one(obj.time_preferences.day, ["today", "tomorrow", "specific_date", "any"] as const),
-      }
+      time_of_day: one(obj.time_preferences.time_of_day, ["morning", "afternoon", "evening", "night"] as const),
+      day: one(obj.time_preferences.day, ["today", "tomorrow", "specific_date", "any"] as const),
+    }
     : null;
 
   const importance = obj.importance && typeof obj.importance === "object"
     ? {
-        urgency: n((obj.importance as any).urgency) as any,
-        impact: n((obj.importance as any).impact) as any,
-        reschedule_penalty: n((obj.importance as any).reschedule_penalty) as any,
-        blocking: Boolean((obj.importance as any).blocking),
-        rationale: typeof (obj.importance as any).rationale === "string" ? (obj.importance as any).rationale : "",
-      }
+      urgency: n((obj.importance as any).urgency) as any,
+      impact: n((obj.importance as any).impact) as any,
+      reschedule_penalty: n((obj.importance as any).reschedule_penalty) as any,
+      blocking: Boolean((obj.importance as any).blocking),
+      rationale: typeof (obj.importance as any).rationale === "string" ? (obj.importance as any).rationale : "",
+    }
     : null;
   const flexibility = obj.flexibility && typeof obj.flexibility === "object"
     ? {
-        cannot_overlap: Boolean((obj.flexibility as any).cannot_overlap),
-        start_flexibility: one((obj.flexibility as any).start_flexibility, ["hard", "soft", "anytime"] as const) ?? "soft",
-        duration_flexibility: one((obj.flexibility as any).duration_flexibility, ["fixed", "split_allowed"] as const) ?? "fixed",
-        min_chunk_minutes: n((obj.flexibility as any).min_chunk_minutes),
-        max_splits: n((obj.flexibility as any).max_splits),
-      }
+      cannot_overlap: Boolean((obj.flexibility as any).cannot_overlap),
+      start_flexibility: one((obj.flexibility as any).start_flexibility, ["hard", "soft", "anytime"] as const) ?? "soft",
+      duration_flexibility: one((obj.flexibility as any).duration_flexibility, ["fixed", "split_allowed"] as const) ?? "fixed",
+      min_chunk_minutes: n((obj.flexibility as any).min_chunk_minutes),
+      max_splits: n((obj.flexibility as any).max_splits),
+    }
     : null;
 
   return {
@@ -814,35 +850,45 @@ function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
   let window_end: string | null = null;
   let start_target_at: string | null = null;
   let is_soft_start = false;
-  let task_type_hint: string | null = ex.title;
+  let task_type_hint: string | null = ex.kind ?? ex.title;
 
-  // Prioritize scheduled_time if present
-  if (ex.scheduled_time?.datetime) {
+  const scheduledAt = ex.scheduled_time?.datetime ?? null;
+  const scheduledExplicit = Boolean(
+    scheduledAt && ex.scheduled_time?.source === "explicit",
+  );
+  const windowRelation =
+    ex.execution_window?.relation === "between" ||
+    ex.execution_window?.relation === "on_day";
+  const windowStart = ex.execution_window?.start ?? null;
+  const windowEnd = ex.execution_window?.end ?? null;
+  const hasWindow = Boolean(windowRelation && (windowStart || windowEnd));
+  const hasDeadline = Boolean(ex.deadline?.datetime);
+
+  if (scheduledExplicit && scheduledAt) {
     constraint_type = "start_time";
-    constraint_time = ex.scheduled_time.datetime;
-    original_target_time = ex.scheduled_time.datetime;
-    start_target_at = ex.scheduled_time.datetime;
-    is_soft_start = ex.scheduled_time.precision === "approximate" || ex.scheduled_time.source === "inferred";
-  }
-
-  // Execution window explicit
-  if (ex.execution_window?.relation === "between" || ex.execution_window?.relation === "on_day") {
-    if (ex.execution_window.start || ex.execution_window.end) {
-      constraint_type = "window";
-      constraint_time = ex.execution_window.start ?? null;
-      constraint_end = ex.execution_window.end ?? null;
-      window_start = constraint_time;
-      window_end = constraint_end;
-    }
-  }
-
-  // Deadline semantics
-  if (ex.execution_window?.relation === "before_deadline" && ex.deadline?.datetime) {
+    constraint_time = scheduledAt;
+    original_target_time = scheduledAt;
+    start_target_at = scheduledAt;
+    is_soft_start = false;
+    deadline_at = hasDeadline ? ex.deadline!.datetime : deadline_at;
+  } else if (hasWindow) {
+    constraint_type = "window";
+    constraint_time = windowStart;
+    constraint_end = windowEnd;
+    window_start = windowStart;
+    window_end = windowEnd;
+  } else if (hasDeadline) {
     constraint_type = "deadline_time";
-    constraint_time = ex.deadline.datetime;
-    deadline_at = ex.deadline.datetime;
-    // Optionally provide a window end for schedulers that also use window
-    window_end = ex.deadline.datetime;
+    constraint_time = ex.deadline!.datetime;
+    deadline_at = ex.deadline!.datetime;
+    window_end = ex.deadline!.datetime;
+  } else if (scheduledAt) {
+    constraint_type = "start_time";
+    constraint_time = scheduledAt;
+    original_target_time = scheduledAt;
+    start_target_at = scheduledAt;
+    is_soft_start = ex.scheduled_time?.precision === "approximate" ||
+      ex.scheduled_time?.source === "inferred";
   }
 
   return {
@@ -868,4 +914,250 @@ function captureProposalReason(ex: DiaGuruTaskExtraction): string {
   if (ex.execution_window?.relation) bits.push(`window=${ex.execution_window.relation}`);
   if (ex.time_preferences?.time_of_day) bits.push(`pref=${ex.time_preferences.time_of_day}`);
   return `Mapped from extraction (${bits.join(", ")})`;
+}
+
+function parseReferenceNow(value?: string | null) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function applyRoutineNormalization(args: {
+  extraction: DiaGuruTaskExtraction;
+  content: string;
+  timezone: string;
+  referenceNow: Date;
+}) {
+  const { extraction, content, timezone, referenceNow } = args;
+  const normalizedText = content.toLowerCase();
+  const mentionsSleep = /\b(sleep|nap|bed ?time)\b/i.test(content);
+  const mentionsMeal = /\b(eat|meal|breakfast|lunch|dinner|snack)\b/i.test(content);
+
+  if (mentionsSleep) {
+    normalizeSleepExtraction(extraction, timezone, referenceNow);
+  } else if (mentionsMeal) {
+    normalizeMealExtraction(extraction, timezone, referenceNow, normalizedText);
+  }
+
+  if (/\bbefore (i )?sleep\b/i.test(content)) {
+    applyBeforeSleepDeadline(extraction, timezone, referenceNow);
+  }
+}
+
+function normalizeSleepExtraction(extraction: DiaGuruTaskExtraction, timezone: string, referenceNow: Date) {
+  extraction.kind = "routine.sleep";
+  const importance = extraction.importance ?? {
+    urgency: 2,
+    impact: 2,
+    reschedule_penalty: 1,
+    blocking: false,
+    rationale: extraction.importance?.rationale ?? "Sleep routine normalized.",
+  };
+  importance.urgency = Math.min(importance.urgency ?? 2, 3) as 1 | 2 | 3 | 4 | 5;
+  importance.impact = Math.min(importance.impact ?? 2, 3) as 1 | 2 | 3 | 4 | 5;
+  importance.reschedule_penalty = Math.min(importance.reschedule_penalty ?? 1, 1) as 0 | 1 | 2 | 3;
+  importance.blocking = false;
+  extraction.importance = importance;
+
+  const flexibility = extraction.flexibility ?? {
+    cannot_overlap: true,
+    start_flexibility: "soft",
+    duration_flexibility: "fixed",
+    min_chunk_minutes: extraction.estimated_minutes ?? 60,
+    max_splits: 1,
+  };
+  flexibility.cannot_overlap = true;
+  flexibility.start_flexibility = "soft";
+  flexibility.duration_flexibility = "fixed";
+  flexibility.min_chunk_minutes = Math.max(flexibility.min_chunk_minutes ?? 60, 30);
+  flexibility.max_splits = 1;
+  extraction.flexibility = flexibility;
+
+  if (!hasExplicitWindow(extraction)) {
+    const windowStart = buildZonedDateTime({
+      timezone,
+      reference: referenceNow,
+      hour: 22,
+      minute: 30,
+    });
+    const windowEnd = buildZonedDateTime({
+      timezone,
+      reference: referenceNow,
+      hour: 7,
+      minute: 30,
+      dayOffset: 1,
+    });
+    extraction.execution_window = {
+      relation: "between",
+      start: windowStart,
+      end: windowEnd,
+      source: "default",
+    };
+  }
+
+  if (extraction.deadline && extraction.deadline.source !== "explicit") {
+    extraction.deadline = null;
+  }
+}
+
+function normalizeMealExtraction(
+  extraction: DiaGuruTaskExtraction,
+  timezone: string,
+  referenceNow: Date,
+  normalizedText: string,
+) {
+  extraction.kind = "routine.meal";
+  const importance = extraction.importance ?? {
+    urgency: 2,
+    impact: 2,
+    reschedule_penalty: 0,
+    blocking: false,
+    rationale: extraction.importance?.rationale ?? "Meal routine normalized.",
+  };
+  importance.urgency = Math.min(importance.urgency ?? 2, 2) as 1 | 2 | 3 | 4 | 5;
+  importance.impact = Math.min(importance.impact ?? 2, 2) as 1 | 2 | 3 | 4 | 5;
+  importance.reschedule_penalty = 0;
+  importance.blocking = false;
+  extraction.importance = importance;
+
+  const flexibility = extraction.flexibility ?? {
+    cannot_overlap: false,
+    start_flexibility: "soft",
+    duration_flexibility: "fixed",
+    min_chunk_minutes: extraction.estimated_minutes ?? 30,
+    max_splits: 1,
+  };
+  flexibility.cannot_overlap = false;
+  flexibility.start_flexibility = "soft";
+  flexibility.duration_flexibility = "fixed";
+  flexibility.min_chunk_minutes = Math.max(flexibility.min_chunk_minutes ?? 30, 15);
+  flexibility.max_splits = 1;
+  extraction.flexibility = flexibility;
+
+  if (!hasExplicitWindow(extraction)) {
+    const window = inferMealWindow(normalizedText);
+    const windowStart = buildZonedDateTime({
+      timezone,
+      reference: referenceNow,
+      hour: window.startHour,
+      minute: window.startMinute,
+    });
+    const windowEnd = buildZonedDateTime({
+      timezone,
+      reference: referenceNow,
+      hour: window.endHour,
+      minute: window.endMinute,
+    });
+    extraction.execution_window = {
+      relation: "between",
+      start: windowStart,
+      end: windowEnd,
+      source: "default",
+    };
+  }
+}
+
+function applyBeforeSleepDeadline(extraction: DiaGuruTaskExtraction, timezone: string, referenceNow: Date) {
+  const defaultDeadline = buildZonedDateTime({
+    timezone,
+    reference: referenceNow,
+    hour: 23,
+    minute: 30,
+  });
+
+  if (!extraction.deadline) {
+    extraction.deadline = { datetime: defaultDeadline, kind: "soft", source: "inferred" };
+  } else {
+    extraction.deadline.datetime = defaultDeadline;
+    extraction.deadline.kind = extraction.deadline.kind === "hard" ? "soft" : extraction.deadline.kind;
+    extraction.deadline.source = extraction.deadline.source ?? "inferred";
+  }
+
+  extraction.execution_window = extraction.execution_window ?? {
+    relation: "before_deadline",
+    start: null,
+    end: defaultDeadline,
+    source: "default",
+  };
+  extraction.execution_window.relation = "before_deadline";
+  extraction.execution_window.end = defaultDeadline;
+}
+
+function hasExplicitWindow(extraction: DiaGuruTaskExtraction) {
+  return Boolean(extraction.execution_window?.start && extraction.execution_window?.end);
+}
+
+function inferMealWindow(text: string) {
+  if (/\bbreakfast\b/.test(text) || /\bmorning\b/.test(text)) {
+    return { startHour: 7, startMinute: 30, endHour: 9, endMinute: 30 };
+  }
+  if (/\blunch\b/.test(text) || /\bmidday\b/.test(text) || /\bnoon\b/.test(text)) {
+    return { startHour: 12, startMinute: 0, endHour: 14, endMinute: 0 };
+  }
+  if (/\bdinner\b/.test(text) || /\bevening\b/.test(text)) {
+    return { startHour: 18, startMinute: 0, endHour: 20, endMinute: 0 };
+  }
+  return { startHour: 12, startMinute: 0, endHour: 13, endMinute: 0 };
+}
+
+function buildZonedDateTime(args: {
+  timezone: string;
+  reference: Date;
+  hour: number;
+  minute: number;
+  dayOffset?: number;
+}) {
+  const { timezone, reference, hour, minute } = args;
+  const dayOffset = args.dayOffset ?? computeDayOffset(reference, timezone, hour, minute);
+  const dateParts = getLocalDateParts(reference, timezone);
+  const utcGuess = new Date(
+    Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day + dayOffset, hour, minute, 0, 0),
+  );
+  const offsetMinutes = getTimezoneOffsetMinutes(utcGuess, timezone);
+  return new Date(utcGuess.getTime() - offsetMinutes * 60000).toISOString();
+}
+
+function computeDayOffset(reference: Date, timezone: string, targetHour: number, targetMinute: number) {
+  const { hour, minute } = getLocalTimeParts(reference, timezone);
+  if (hour > targetHour) return 1;
+  if (hour === targetHour && minute >= targetMinute) return 1;
+  return 0;
+}
+
+function getLocalDateParts(reference: Date, timezone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(reference);
+  const lookup = (type: "year" | "month" | "day") =>
+    parseInt(parts.find((p) => p.type === type)?.value ?? "0", 10);
+  return {
+    year: lookup("year"),
+    month: lookup("month"),
+    day: lookup("day"),
+  };
+}
+
+function getLocalTimeParts(reference: Date, timezone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const [hourStr, minuteStr] = formatter.format(reference).split(":");
+  return {
+    hour: parseInt(hourStr, 10),
+    minute: parseInt(minuteStr, 10),
+  };
+}
+
+function getTimezoneOffsetMinutes(date: Date, timeZone: string) {
+  const localDate = new Date(date.toLocaleString("en-US", { timeZone }));
+  const utcDate = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
+  return (localDate.getTime() - utcDate.getTime()) / 60000;
 }

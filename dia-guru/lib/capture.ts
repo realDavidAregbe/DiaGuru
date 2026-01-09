@@ -352,6 +352,11 @@ export async function parseCapture(input: ParseCaptureArgs): Promise<ParseTaskRe
     throw new Error('Empty response from parse-task function.');
   }
 
+  try {
+    // eslint-disable-next-line no-console
+    console.log('parse-task response payload', data);
+  } catch {}
+
   return data as ParseTaskResponse;
 }
 
@@ -397,6 +402,7 @@ export type ScheduleOptions = {
   preferredStart?: string;
   preferredEnd?: string;
   allowOverlap?: boolean;
+  allowRebalance?: boolean;
   timezone?: string;
   timezoneOffsetMinutes?: number;
 };

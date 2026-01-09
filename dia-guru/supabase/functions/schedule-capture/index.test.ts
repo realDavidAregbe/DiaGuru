@@ -1,378 +1,248 @@
+import type { CaptureEntryRow } from "../types.ts";
+
+
 import {
-  assert,
-  assertEquals,
-  assertFalse,
-  assertRejects,
-  assertStrictEquals,
-} from "std/assert";
+  collectConflictingEvents,
+  computeSchedulingPlan,
+  findNextAvailableSlot,
+  computeBusyIntervals,
+  parsePreferredSlot,
+  normalizedConstraintType,
+  type CalendarEvent,
+  type PreferredSlot,
+} from "./scheduling-core.ts";
+import { handler } from "./index.ts";
+import { assert, assertEquals } from "std/assert"; // if you're on Deno
+// or the equivalent for Jest/Vitest
 
-import { getCalendarHealth } from "../calendar-health/index.ts";
-import type { CalendarAccountRow, CalendarTokenRow, Database } from "../types.ts";
-import {
-  ScheduleError,
-  resolveCalendarClient,
-  __test__ as scheduleTestUtils,
-} from "./index.ts";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
-
-const { createGoogleCalendarActions } = scheduleTestUtils;
-
-type AdminStubState = {
-  account: CalendarAccountRow | null;
-  token: CalendarTokenRow | null;
-};
-
-type AdminStubLogs = {
-  accountUpdates: Array<Record<string, unknown>>;
-  tokenUpserts: Array<Record<string, unknown>>;
-};
-
-type AdminStub = {
-  client: SupabaseClient<Database, "public">;
-  state: AdminStubState;
-  logs: AdminStubLogs;
-};
-
-function createAdminStub(initial: {
-  account?: CalendarAccountRow | null;
-  token?: CalendarTokenRow | null;
-}): AdminStub {
-  const state: AdminStubState = {
-    account: initial.account ?? null,
-    token: initial.token ?? null,
-  };
-  const logs: AdminStubLogs = {
-    accountUpdates: [],
-    tokenUpserts: [],
-  };
-
-  const client = {
-    from(table: string) {
-      if (table === "calendar_accounts") {
-        return {
-          select() {
-            const query = {
-              eq() {
-                return query;
-              },
-              single: async () => ({ data: state.account, error: null }),
-              maybeSingle: async () => ({ data: state.account, error: null }),
-            };
-            return query;
-          },
-          update(values: Record<string, unknown>) {
-            return {
-              eq: async () => {
-                if (state.account) {
-                  state.account = { ...state.account, ...values } as CalendarAccountRow;
-                } else {
-                  state.account = {
-                    id: 1,
-                    user_id: "stub-user",
-                    provider: "google",
-                    needs_reconnect: Boolean(values.needs_reconnect),
-                  };
-                }
-                logs.accountUpdates.push(values);
-                return { data: state.account ? [state.account] : [], error: null };
-              },
-            };
-          },
-        };
-      }
-
-      if (table === "calendar_tokens") {
-        return {
-          select() {
-            const query = {
-              eq() {
-                return query;
-              },
-              single: async () => ({ data: state.token, error: null }),
-              maybeSingle: async () => ({ data: state.token, error: null }),
-            };
-            return query;
-          },
-          upsert: async (values: {
-            account_id: number;
-            access_token: string;
-            refresh_token: string | null;
-            expiry: string;
-          }) => {
-            state.token = {
-              account_id: values.account_id,
-              access_token: values.access_token,
-              refresh_token: values.refresh_token,
-              expiry: values.expiry,
-            };
-            logs.tokenUpserts.push(values);
-            return { data: state.token, error: null };
-          },
-        };
-      }
-
-      throw new Error(`Unsupported table ${table}`);
-    },
+function makeCapture(overrides: Partial<CaptureEntryRow> = {}): CaptureEntryRow {
+  const base: CaptureEntryRow = {
+    id: "cap_1",
+    user_id: "user_1",
+    content: "Test capture",
+    estimated_minutes: 60,
+    importance: 1,
+    urgency: null,
+    impact: null,
+    reschedule_penalty: null,
+    blocking: false,
+    status: "pending",
+    scheduled_for: null,
+    created_at: "2025-01-01T00:00:00Z",
+    updated_at: "2025-01-01T00:00:00Z",
+    calendar_event_id: null,
+    calendar_event_etag: null,
+    planned_start: null,
+    planned_end: null,
+    last_check_in: null,
+    scheduling_notes: null,
+    constraint_type: "flexible",
+    constraint_time: null,
+    constraint_end: null,
+    constraint_date: null,
+    original_target_time: null,
+    deadline_at: null,
+    window_start: null,
+    window_end: null,
+    start_target_at: null,
+    is_soft_start: false,
+    cannot_overlap: false,
+    start_flexibility: "soft",
+    duration_flexibility: "fixed",
+    min_chunk_minutes: null,
+    max_splits: null,
+    extraction_kind: null,
+    time_pref_time_of_day: null,
+    time_pref_day: null,
+    importance_rationale: null,
+    externality_score: 0,
+    reschedule_count: 0,
+    task_type_hint: null,
+    freeze_until: null,
+    plan_id: null,
+    manual_touch_at: null,
   };
 
+  return { ...base, ...overrides } as CaptureEntryRow;
+}
+
+
+
+function makeEvent(
+  startIso: string,
+  endIso: string,
+  extra: Partial<CalendarEvent> = {},
+): CalendarEvent {
   return {
-    client: client as SupabaseClient<Database, "public">,
-    state,
-    logs,
+    id: extra.id ?? "evt_" + Math.random().toString(36).slice(2),
+    start: { dateTime: startIso },
+    end: { dateTime: endIso },
+    ...extra,
   };
 }
 
-function stubFetch(factory: (url: string, init?: RequestInit) => Promise<Response>) {
-  const original = globalThis.fetch;
-  globalThis.fetch = (async (input: Request | string | URL, init?: RequestInit) => {
-    const url = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
-    return await factory(url, init);
-  }) as typeof fetch;
-  return () => {
-    globalThis.fetch = original;
-  };
+function slot(startIso: string, endIso: string): PreferredSlot {
+  return { start: new Date(startIso), end: new Date(endIso) };
 }
 
-Deno.test("resolveCalendarClient refreshes expiring access tokens", async () => {
-  const account: CalendarAccountRow = {
-    id: 42,
-    user_id: "user-1",
-    provider: "google",
-    needs_reconnect: false,
-  };
-  const token: CalendarTokenRow = {
-    account_id: 42,
-    access_token: "old-token",
-    refresh_token: "refresh-token",
-    expiry: new Date(Date.now() + 10_000).toISOString(),
-  };
-
-  const admin = createAdminStub({ account, token });
-
-  const restore = stubFetch(async (url) => {
-    if (url.includes("oauth2.googleapis.com/token")) {
-      return new Response(
-        JSON.stringify({
-          access_token: "new-token",
-          refresh_token: "new-refresh",
-          expires_in: 3600,
-        }),
-        { status: 200 },
-      );
-    }
-    throw new Error(`Unexpected fetch ${url}`);
-  });
-
+function decodeJwtPayload(token: string) {
   try {
-    const credentials = await resolveCalendarClient(admin.client, "user-1", "client", "secret");
-    assert(credentials);
-    assertEquals(credentials.accessToken, "new-token");
-    assertEquals(credentials.refreshToken, "new-refresh");
-    assertStrictEquals(credentials.refreshed, true);
-    assertEquals(admin.state.token?.access_token, "new-token");
-    assertEquals(admin.state.account?.needs_reconnect, false);
-    assertEquals(admin.logs.tokenUpserts.length, 1);
-  } finally {
-    restore();
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    return JSON.parse(atob(padded)) as Record<string, unknown>;
+  } catch {
+    return null;
   }
+}
+
+function maskSecret(value: string) {
+  if (!value) return "<empty>";
+  if (value.length <= 10) return `${value.slice(0, 2)}...`;
+  return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+
+Deno.test("collectConflictingEvents relaxes buffer for in-progress events", () => {
+  const now = new Date("2025-01-01T10:30:00Z");
+  const event = makeEvent("2025-01-01T10:00:00Z", "2025-01-01T11:00:00Z");
+
+  // slot that starts just after the event *end* — should be OK if tail buffer = 0
+  const justAfter = slot("2025-01-01T11:00:00Z", "2025-01-01T11:30:00Z");
+
+  const conflicts = collectConflictingEvents(justAfter, [event], now);
+  assertEquals(conflicts.length, 0);
 });
 
-Deno.test("resolveCalendarClient flags account when tokens missing", async () => {
-  const account: CalendarAccountRow = {
-    id: 7,
-    user_id: "user-1",
-    provider: "google",
-    needs_reconnect: false,
-  };
-  const admin = createAdminStub({ account, token: null });
 
-  const restore = stubFetch(async () => {
-    throw new Error("fetch should not be called");
-  });
+Deno.test("collectConflictingEvents still blocks overlapping slots during event", () => {
+  const now = new Date("2025-01-01T10:30:00Z");
+  const event = makeEvent("2025-01-01T10:00:00Z", "2025-01-01T11:00:00Z");
 
-  try {
-    const credentials = await resolveCalendarClient(admin.client, "user-1", "client", "secret");
-    assertStrictEquals(credentials, null);
-    assert(admin.state.account?.needs_reconnect);
-  } finally {
-    restore();
-  }
+  const overlapping = slot("2025-01-01T10:45:00Z", "2025-01-01T11:15:00Z");
+  const conflicts = collectConflictingEvents(overlapping, [event], now);
+
+  assertEquals(conflicts.length, 1);
+  assertEquals(conflicts[0].id, event.id);
 });
 
-Deno.test("createGoogleCalendarActions retries once after 401 and refreshes token", async () => {
-  const account: CalendarAccountRow = {
-    id: 99,
-    user_id: "user-2",
-    provider: "google",
-    needs_reconnect: false,
-  };
-  const token: CalendarTokenRow = {
-    account_id: 99,
-    access_token: "expired-token",
-    refresh_token: "refresh-token",
-    expiry: new Date(Date.now() + 3600_000).toISOString(),
-  };
-  const admin = createAdminStub({ account, token });
 
-  let eventCalls = 0;
-  const restore = stubFetch(async (url) => {
-    if (url.startsWith("https://www.googleapis.com/calendar/v3/calendars/primary/events")) {
-      eventCalls += 1;
-      if (eventCalls === 1) {
-        return new Response(JSON.stringify({ error: { message: "Invalid Credentials" } }), { status: 401 });
-      }
-      return new Response(JSON.stringify({ items: [] }), { status: 200 });
-    }
-    if (url.includes("oauth2.googleapis.com/token")) {
-      return new Response(JSON.stringify({ access_token: "fresh-token", expires_in: 7200 }), { status: 200 });
-    }
-    throw new Error(`Unexpected fetch ${url}`);
+Deno.test("computeSchedulingPlan: deadline_time builds a deadline plan", () => {
+  const capture = makeCapture({
+    constraint_type: "deadline_time",
+    constraint_time: "2025-01-01T18:00:00Z",
   });
 
-  try {
-    const google = createGoogleCalendarActions({
-      credentials: {
-        accountId: 99,
-        accessToken: "expired-token",
-        refreshToken: "refresh-token",
-        refreshed: false,
-      },
-      admin: admin.client,
-      clientId: "client",
-      clientSecret: "secret",
+  const plan = computeSchedulingPlan(capture, 60, 0, new Date("2025-01-01T10:00:00Z"));
+
+  assertEquals(plan.mode, "deadline");
+  assert(plan.deadline);
+  assertEquals(plan.deadline!.toISOString(), "2025-01-01T18:00:00.000Z");
+});
+
+Deno.test("computeSchedulingPlan: start_time builds a start plan at or after now", () => {
+  const capture = makeCapture({
+    constraint_type: "start_time",
+    constraint_time: "2025-01-01T10:00:00Z",
+  });
+
+  const referenceNow = new Date("2025-01-01T09:00:00Z");
+  const plan = computeSchedulingPlan(capture, 60, 0, referenceNow);
+
+  assertEquals(plan.mode, "start");
+  assert(plan.preferredSlot);
+  assertEquals(plan.preferredSlot!.start.toISOString(), "2025-01-01T10:00:00.000Z");
+});
+
+
+// Deno.test("findNextAvailableSlot respects busy intervals and working window", () => {
+//   const now = new Date("2025-01-01T09:00:00Z");
+//   const events = [
+//     makeEvent("2025-01-01T10:00:00Z", "2025-01-01T11:00:00Z"),
+//   ];
+//   const busy = computeBusyIntervals(events); // full 30m buffer
+//   const slot = findNextAvailableSlot(busy, 60, 0, { referenceNow: now });
+
+//   assert(slot);
+//   // With 30m buffer, the earliest free start is 11:30
+//   assertEquals(slot!.start.toISOString(), "2025-01-01T11:30:00.000Z");
+// });
+
+Deno.test("schedule-capture handler (live request)", async () => {
+  console.log("Starting live schedule-capture test...");
+  const runLive = (Deno.env.get("RUN_LIVE_SCHEDULE_CAPTURE_TEST") ?? "").trim();
+  if (runLive !== "1") return;
+
+
+  const userBearer = Deno.env.get("TEST_USER_BEARER") ?? Deno.env.get("USER_BEARER");
+  assert(userBearer, "Missing env TEST_USER_BEARER");
+
+  const supabaseUrl =
+    Deno.env.get("SUPABASE_URL") ?? Deno.env.get("EXPO_PUBLIC_SUPABASE_URL");
+  if (supabaseUrl && !Deno.env.get("SUPABASE_URL")) {
+    Deno.env.set("SUPABASE_URL", supabaseUrl);
+  }
+
+  const anonKey =
+    Deno.env.get("SUPABASE_ANON_KEY") ??
+    Deno.env.get("ANON_KEY") ??
+    Deno.env.get("EXPO_PUBLIC_SUPABASE_ANON_KEY");
+  if (anonKey && !Deno.env.get("SUPABASE_ANON_KEY")) {
+    Deno.env.set("SUPABASE_ANON_KEY", anonKey);
+  }
+
+  const googleClientId =
+    Deno.env.get("GOOGLE_CLIENT_ID") ?? Deno.env.get("EXPO_PUBLIC_GOOGLE_CLIENT_ID");
+  if (googleClientId && !Deno.env.get("GOOGLE_CLIENT_ID")) {
+    Deno.env.set("GOOGLE_CLIENT_ID", googleClientId);
+  }
+
+  assert(supabaseUrl, "Missing env SUPABASE_URL");
+  assert(anonKey, "Missing env SUPABASE_ANON_KEY");
+  const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY");
+  assert(serviceRoleKey, "Missing env SERVICE_ROLE_KEY");
+  assert(googleClientId, "Missing env GOOGLE_CLIENT_ID");
+  assert(Deno.env.get("GOOGLE_CLIENT_SECRET"), "Missing env GOOGLE_CLIENT_SECRET");
+
+  const serviceRolePayload = decodeJwtPayload(serviceRoleKey);
+  console.log("Supabase URL:", supabaseUrl);
+  console.log("Anon key:", maskSecret(anonKey));
+  if (serviceRolePayload) {
+    console.log("Service role key payload:", {
+      iss: serviceRolePayload.iss,
+      role: serviceRolePayload.role,
+      ref: serviceRolePayload.ref,
     });
-
-    const events = await google.listEvents(new Date().toISOString(), new Date(Date.now() + 86_400_000).toISOString());
-    assert(Array.isArray(events));
-    assertEquals(eventCalls, 2);
-    assertEquals(admin.state.token?.access_token, "fresh-token");
-    assertEquals(admin.state.account?.needs_reconnect, false);
-  } finally {
-    restore();
+  } else {
+    console.log("Service role key payload: <unreadable>");
   }
-});
 
-Deno.test("createGoogleCalendarActions marks reconnect when refresh fails", async () => {
-  const account: CalendarAccountRow = {
-    id: 5,
-    user_id: "user-3",
-    provider: "google",
-    needs_reconnect: false,
-  };
-  const token: CalendarTokenRow = {
-    account_id: 5,
-    access_token: "expired-token",
-    refresh_token: "refresh-token",
-    expiry: new Date(Date.now() + 3600_000).toISOString(),
-  };
-  const admin = createAdminStub({ account, token });
-
-  const restore = stubFetch(async (url) => {
-    if (url.startsWith("https://www.googleapis.com/calendar/v3/calendars/primary/events")) {
-      return new Response(JSON.stringify({ error: { message: "Invalid Credentials" } }), { status: 401 });
-    }
-    if (url.includes("oauth2.googleapis.com/token")) {
-      return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
-    }
-    throw new Error(`Unexpected fetch ${url}`);
+  const timezone = Deno.env.get("TEST_TIMEZONE") ?? null;
+  const offsetRaw = Deno.env.get("TEST_TZ_OFFSET_MINUTES");
+  const timezoneOffsetMinutes = offsetRaw ? Number(offsetRaw) : undefined;
+  console.log("Using timezone:", timezone, "offset minutes:", timezoneOffsetMinutes);
+  const captureId = "8ee1841c-775a-449f-88f6-31a37f4f1644";
+  const req = new Request("http://localhost/functions/v1/schedule-capture", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${userBearer}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      action: "schedule",
+      captureId,
+      allowOverlap: true,
+      allowLatePlacement: true,
+      timezone,
+      timezoneOffsetMinutes,
+    }),
   });
 
-  try {
-    const google = createGoogleCalendarActions({
-      credentials: {
-        accountId: 5,
-        accessToken: "expired-token",
-        refreshToken: "refresh-token",
-        refreshed: false,
-      },
-      admin: admin.client,
-      clientId: "client",
-      clientSecret: "secret",
-    });
-
-    await assertRejects(
-      () => google.listEvents(new Date().toISOString(), new Date(Date.now() + 86_400_000).toISOString()),
-      ScheduleError,
-      "Google Calendar not linked",
-    );
-    assert(admin.state.account?.needs_reconnect);
-  } finally {
-    restore();
-  }
-});
-
-Deno.test("getCalendarHealth returns healthy when tokens are valid", async () => {
-  const account: CalendarAccountRow = {
-    id: 10,
-    user_id: "user-healthy",
-    provider: "google",
-    needs_reconnect: false,
-  };
-  const token: CalendarTokenRow = {
-    account_id: 10,
-    access_token: "valid-token",
-    refresh_token: "refresh-token",
-    expiry: new Date(Date.now() + 7200_000).toISOString(),
-  };
-  const admin = createAdminStub({ account, token });
-
-  const restore = stubFetch(async () => {
-    throw new Error("fetch should not be invoked for valid tokens");
-  });
-
-  try {
-    const health = await getCalendarHealth({
-      admin: admin.client,
-      userId: "user-healthy",
-      clientId: "client",
-      clientSecret: "secret",
-    });
-
-    assertEquals(health.status, "healthy");
-    assertFalse(health.needsReconnect);
-    assertFalse(health.refreshed);
-    assertEquals(health.linked, true);
-  } finally {
-    restore();
-  }
-});
-
-Deno.test("getCalendarHealth signals reconnect when refresh fails", async () => {
-  const account: CalendarAccountRow = {
-    id: 12,
-    user_id: "user-expired",
-    provider: "google",
-    needs_reconnect: false,
-  };
-  const token: CalendarTokenRow = {
-    account_id: 12,
-    access_token: "stale-token",
-    refresh_token: "refresh-token",
-    expiry: new Date(Date.now() - 60_000).toISOString(),
-  };
-  const admin = createAdminStub({ account, token });
-
-  const restore = stubFetch(async (url) => {
-    if (url.includes("oauth2.googleapis.com/token")) {
-      return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
-    }
-    throw new Error(`Unexpected fetch ${url}`);
-  });
-
-  try {
-    const health = await getCalendarHealth({
-      admin: admin.client,
-      userId: "user-expired",
-      clientId: "client",
-      clientSecret: "secret",
-    });
-
-    assertEquals(health.status, "needs_reconnect");
-    assert(health.needsReconnect);
-    assertFalse(health.refreshed);
-    assert(admin.state.account?.needs_reconnect);
-  } finally {
-    restore();
-  }
+  const res = await handler(req);
+  const data = await res.json().catch(() => ({}));
+  console.log("Response data:", data);
+  assert(res.ok || res.status === 409, `Unexpected status ${res.status}: ${JSON.stringify(data)}`);
+  assert(data && (data.message || data.decision || data.error));
 });

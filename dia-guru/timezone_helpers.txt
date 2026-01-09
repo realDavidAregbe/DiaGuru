@@ -1,0 +1,62 @@
+// Add timezone helper functions at the end of the file before exports
+
+function buildZonedDateTime(args: {
+  timezone: string;
+  reference: Date;
+  hour: number;
+  minute: number;
+  dayOffset?: number;
+}) {
+  const { timezone, reference, hour, minute } = args;
+  const dayOffset = args.dayOffset ?? computeDayOffset(reference, timezone, hour, minute);
+  const dateParts = getLocalDateParts(reference, timezone);
+  const utcGuess = new Date(
+    Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day + dayOffset, hour, minute, 0, 0),
+  );
+  const offsetMinutes = getTimezoneOffsetMinutes(utcGuess, timezone);
+  return new Date(utcGuess.getTime() - offsetMinutes * 60000).toISOString();
+}
+
+function computeDayOffset(reference: Date, timezone: string, targetHour: number, targetMinute: number) {
+  const { hour, minute } = getLocalTimeParts(reference, timezone);
+  if (hour > targetHour) return 1;
+  if (hour === targetHour && minute >= targetMinute) return 1;
+  return 0;
+}
+
+function getLocalDateParts(reference: Date, timezone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(reference);
+  const lookup = (type: "year" | "month" | "day") =>
+    parseInt(parts.find((p) => p.type === type)?.value ?? "0", 10);
+  return {
+    year: lookup("year"),
+    month: lookup("month"),
+    day: lookup("day"),
+  };
+}
+
+function getLocalTimeParts(reference: Date, timezone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const [hourStr, minuteStr] = formatter.format(reference).split(":");
+  return {
+    hour: parseInt(hourStr, 10),
+    minute: parseInt(minuteStr, 10),
+  };
+}
+
+function getTimezoneOffsetMinutes(date: Date, timeZone: string) {
+  const localDate = new Date(date.toLocaleString("en-US", { timeZone }));
+  const utcDate = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
+  return (localDate.getTime() - utcDate.getTime()) / 60000;
+}

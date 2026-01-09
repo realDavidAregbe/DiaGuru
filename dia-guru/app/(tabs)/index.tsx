@@ -127,6 +127,40 @@ function formatConflictMessage(decision: ScheduleDecision) {
   return lines.join('\n');
 }
 
+function extractScheduleReasons(capture: Capture) {
+  const fallback = 'Scheduled by DiaGuru based on your constraints.';
+  const raw = capture.scheduling_notes;
+  if (!raw || typeof raw !== 'string') return [fallback];
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      const scheduleExplanation = (parsed as Record<string, unknown>).schedule_explanation as
+        | { reasons?: unknown }
+        | undefined;
+      if (scheduleExplanation?.reasons && Array.isArray(scheduleExplanation.reasons)) {
+        const reasons = scheduleExplanation.reasons.map((reason) => String(reason)).filter((r) => r.trim().length > 0);
+        if (reasons.length > 0) return reasons;
+      }
+      const scheduleNote = (parsed as Record<string, unknown>).schedule_note;
+      if (typeof scheduleNote === 'string' && scheduleNote.trim().length > 0) {
+        return [scheduleNote.trim()];
+      }
+    }
+  } catch {
+    // fall through to raw fallback
+  }
+
+  const trimmed = raw.trim();
+  if (trimmed) return [trimmed];
+  return [fallback];
+}
+
+function showScheduleWhy(capture: Capture) {
+  const reasons = extractScheduleReasons(capture);
+  const body = reasons.map((reason) => `- ${reason}`).join('\n');
+  Alert.alert('Why this time?', body);
+}
+
 type DerivedConstraint = {
   constraintType: ConstraintType;
   constraintTime: string | null;
@@ -387,18 +421,18 @@ function containsKeyword(content: string, keywords: string[]) {
     const hasInternalWhitespace = /\s/.test(trimmed);
     const requiresLeadingWhitespace = keyword.startsWith(' ');
     const requiresTrailingWhitespace = keyword.endsWith(' ');
-    const startBoundary = requiresLeadingWhitespace ? '(?:^|\\s)' : '\\b';
-    const endBoundary = requiresTrailingWhitespace ? '(?:\\s|$)' : '\\b';
+  const startBoundary = requiresLeadingWhitespace ? '(?:^|\\s)' : '\\b';
+  const endBoundary = requiresTrailingWhitespace ? '(?:\\s|$)' : '\\b';
 
     if (hasInternalWhitespace) {
       const pattern = new RegExp(
-        `${requiresLeadingWhitespace ? '(?:^|\\s)' : ''}${escapeRegex(trimmed)}${requiresTrailingWhitespace ? '(?:\\s|$)' : ''}`,
+        `${ requiresLeadingWhitespace ? '(?:^|\\s)' : '' }${ escapeRegex(trimmed) }${ requiresTrailingWhitespace ? '(?:\\s|$)' : '' } `,
         'i',
       );
       return pattern.test(content);
     }
 
-    const pattern = new RegExp(`${startBoundary}${escapeRegex(trimmed)}${endBoundary}`, 'i');
+    const pattern = new RegExp(`${ startBoundary }${ escapeRegex(trimmed) }${ endBoundary } `, 'i');
     return pattern.test(content);
   });
 }
@@ -469,7 +503,11 @@ export default function HomeTab() {
   const [calendarHealth, setCalendarHealth] = useState<CalendarHealth | null>(null);
   const [calendarHealthError, setCalendarHealthError] = useState<string | null>(null);
   const [calendarHealthChecking, setCalendarHealthChecking] = useState(false);
+  type UICapturedChunk = { start: string; end: string; late?: boolean; overlapped?: boolean; prime?: boolean };
+  type UIOverlapBudget = { used: number; limit: number } | null;
   const [recentPlan, setRecentPlan] = useState<PlanSummary | null>(null);
+  const [recentChunks, setRecentChunks] = useState<UICapturedChunk[] | null>(null);
+  const [recentOverlapBudget, setRecentOverlapBudget] = useState<UIOverlapBudget>(null);
   const [undoingPlan, setUndoingPlan] = useState(false);
   const [lockingCaptureId, setLockingCaptureId] = useState<string | null>(null);
 
@@ -541,7 +579,7 @@ export default function HomeTab() {
           const notificationId = await scheduleReminderAt(
             endDate,
             'Time to check in',
-            `Did you complete "${capture.content}"?`,
+            `Did you complete "${capture.content}" ? `,
           );
           nextRegistry[capture.id] = { notificationId, plannedEnd: capture.planned_end };
         } catch (error) {
@@ -682,10 +720,37 @@ export default function HomeTab() {
           setRecentPlan(response.planSummary);
         }
         await refreshCalendarHealth();
+        if (response) {
+          console.log('schedule-capture response payload', response);
+          if (Array.isArray(response.chunks)) {
+            setRecentChunks(response.chunks as UICapturedChunk[]);
+          }
+          const budget = (response as any)?.overlap?.budget;
+          if (budget && typeof budget.used === 'number' && typeof budget.limit === 'number') {
+            setRecentOverlapBudget({ used: budget.used, limit: budget.limit });
+          } else {
+            setRecentOverlapBudget(null);
+          }
+        }
         return response;
-      } catch (error) {
+      } catch (error: any) {
         console.log('schedule-capture error', error);
-        const message = extractScheduleError(error);
+        let message = extractScheduleError(error);
+        // Try to extract JSON error payload from FunctionsHttpError
+        try {
+          const ctx = (error as any)?.context;
+          if (ctx && typeof ctx.json === 'function') {
+            const payload = await ctx.json();
+            console.log('schedule-capture response payload', payload);
+            if (payload?.error) message = String(payload.error);
+            if (payload?.reason === 'no_slot' && payload?.deadline) {
+              message = `${ message } (no legal slot before ${ payload.deadline })`;
+            }
+            if (payload?.reason === 'slot_exceeds_deadline' && payload?.slot?.end && payload?.deadline) {
+              message = `${ message } (slot ${ payload.slot.end } > deadline ${ payload.deadline })`;
+            }
+          }
+        } catch {}
         Alert.alert('Scheduling failed', message);
         if (message?.toLowerCase().includes('google calendar not linked')) {
           refreshCalendarHealth();
@@ -714,6 +779,18 @@ export default function HomeTab() {
             timezone,
             timezoneOffsetMinutes,
           });
+          if (resp) {
+            console.log('schedule-capture response payload', resp);
+            if (Array.isArray(resp.chunks)) {
+              setRecentChunks(resp.chunks as UICapturedChunk[]);
+            }
+            const budget = (resp as any)?.overlap?.budget;
+            if (budget && typeof budget.used === 'number' && typeof budget.limit === 'number') {
+              setRecentOverlapBudget({ used: budget.used, limit: budget.limit });
+            } else {
+              setRecentOverlapBudget(null);
+            }
+          }
           let scheduled = !resp?.decision;
 
           // If server returns a conflict decision with a suggestion, try suggested slot first
@@ -725,6 +802,15 @@ export default function HomeTab() {
               timezone,
               timezoneOffsetMinutes,
             });
+            if (follow && Array.isArray((follow as any).chunks)) {
+              setRecentChunks(follow.chunks as UICapturedChunk[]);
+            }
+            const followBudget = (follow as any)?.overlap?.budget;
+            if (followBudget && typeof followBudget.used === 'number' && typeof followBudget.limit === 'number') {
+              setRecentOverlapBudget({ used: followBudget.used, limit: followBudget.limit });
+            } else if (follow) {
+              setRecentOverlapBudget(null);
+            }
             scheduled = !follow?.decision;
             // If still not scheduled, allow overlap with suggested slot
             if (!scheduled) {
@@ -735,6 +821,22 @@ export default function HomeTab() {
                 timezone,
                 timezoneOffsetMinutes,
               });
+              if (overlapFollow && Array.isArray((overlapFollow as any).chunks)) {
+                setRecentChunks(overlapFollow.chunks as UICapturedChunk[]);
+              }
+              const overlapFollowBudget = (overlapFollow as any)?.overlap?.budget;
+              if (
+                overlapFollowBudget &&
+                typeof overlapFollowBudget.used === 'number' &&
+                typeof overlapFollowBudget.limit === 'number'
+              ) {
+                setRecentOverlapBudget({
+                  used: overlapFollowBudget.used,
+                  limit: overlapFollowBudget.limit,
+                });
+              } else if (overlapFollow) {
+                setRecentOverlapBudget(null);
+              }
               scheduled = !overlapFollow?.decision;
             }
           }
@@ -746,16 +848,31 @@ export default function HomeTab() {
               timezone,
               timezoneOffsetMinutes,
             });
+            if (overlapResp && Array.isArray((overlapResp as any).chunks)) {
+              setRecentChunks(overlapResp.chunks as UICapturedChunk[]);
+            }
+            const overlapBudget = (overlapResp as any)?.overlap?.budget;
+            if (overlapBudget && typeof overlapBudget.used === 'number' && typeof overlapBudget.limit === 'number') {
+              setRecentOverlapBudget({ used: overlapBudget.used, limit: overlapBudget.limit });
+            } else if (overlapResp) {
+              setRecentOverlapBudget(null);
+            }
             scheduled = !overlapResp?.decision;
           }
 
           if (scheduled) scheduledCount += 1;
           // Refresh lists incrementally to keep busy intervals consistent server-side
           await Promise.all([loadPending(), loadScheduled()]);
-        } catch (e) {
+        } catch (e: any) {
           // Skip problematic capture; continue with the rest
-          // eslint-disable-next-line no-console
           console.log('queue scheduling error', cap.id, e);
+          try {
+            const ctx = (e as any)?.context;
+            if (ctx && typeof ctx.json === 'function') {
+              const payload = await ctx.json();
+              console.log('queue scheduling response payload', cap.id, payload);
+            }
+          } catch {}
           continue;
         }
       }
@@ -786,9 +903,8 @@ export default function HomeTab() {
       const llmImpact: number | null = extraction?.importance?.impact ?? null;
       const llmCompositeImportance =
         llmUrgency != null || llmImpact != null
-          ? Math.max(1, Math.round(((llmUrgency ?? 0) * 0.6 + (llmImpact ?? 0) * 0.4)))
-          : selectedImportance;
-      // Map LLM 1–5 scale to DB 1–3 scale to satisfy capture_entries_importance_check
+          ? Math.max(1, Math.round(((llmUrgency ?? 0) * 0.6 + (llmImpact ?? 0) * 0.4))) : selectedImportance;
+      // Map LLM 1-5 scale to DB 1-3 scale to satisfy capture_entries_importance_check
       const mappedImportance =
         llmCompositeImportance <= 2 ? 1 : llmCompositeImportance >= 5 ? 3 : 2;
 
@@ -900,6 +1016,13 @@ export default function HomeTab() {
               }),
           },
           {
+            text: 'Make room',
+            onPress: () =>
+              scheduleTopCapture(captureId, 'schedule', {
+                allowRebalance: true,
+              }),
+          },
+          {
             text: 'Let DiaGuru decide',
             onPress: () => scheduleTopCapture(captureId, 'schedule'),
           },
@@ -1007,7 +1130,9 @@ export default function HomeTab() {
       } catch (error) {
         if (!hasMinutes) {
           const message =
-            error instanceof Error ? error.message : 'We could not infer the duration automatically.';
+            error instanceof Error && error.message
+              ? error.message
+              : 'We could not infer the duration automatically.';
           Alert.alert('DeepSeek failed', message);
 
           setSubmitting(false);
@@ -1169,7 +1294,9 @@ export default function HomeTab() {
         onPress={handleAddCapture}
         disabled={submitting}
       >
-        <Text style={styles.primaryButtonText}>{submitting ? 'Saving...' : 'Save & auto-schedule'}</Text>
+        <Text style={styles.primaryButtonText}>
+          {submitting ? 'Saving...' : 'Save & auto-schedule'}
+        </Text>
       </TouchableOpacity>
 
       {pendingLoading ? (
@@ -1196,7 +1323,7 @@ export default function HomeTab() {
                   (scheduling || pending.length === 0) && styles.secondaryButtonTextDisabled,
                 ]}
               >
-                Re-run scheduling
+                Re-run Sheduling
               </Text>
             </TouchableOpacity>
           </View>
@@ -1204,7 +1331,7 @@ export default function HomeTab() {
             <CaptureCard key={capture.id} capture={capture} rank={index + 1} />
           ))}
           {queueExtras > 0 ? (
-            <Text style={styles.sectionSubtext}>{`+${queueExtras} more waiting in the queue`}</Text>
+            <Text style={styles.sectionSubtext}>{`+ ${queueExtras} more waiting in the queue`}</Text>
           ) : null}
         </View>
       )}
@@ -1240,7 +1367,7 @@ export default function HomeTab() {
                 />
               ))}
               {overdueScheduled.length > overduePreview.length ? (
-                <Text style={styles.sectionSubtext}>{`+${overdueScheduled.length - overduePreview.length} more awaiting confirmation`}</Text>
+                <Text style={styles.sectionSubtext}>{`+ ${overdueScheduled.length - overduePreview.length} more awaiting confirmation`}</Text>
               ) : null}
             </View>
           )}
@@ -1252,7 +1379,7 @@ export default function HomeTab() {
                 <ScheduledSummaryCard key={capture.id} capture={capture} />
               ))}
               {upcomingScheduled.length > upcomingPreview.length ? (
-                <Text style={styles.sectionSubtext}>{`+${upcomingScheduled.length - upcomingPreview.length} more scheduled`}</Text>
+                <Text style={styles.sectionSubtext}>{`+ ${upcomingScheduled.length - upcomingPreview.length} more scheduled`}</Text>
               ) : null}
             </View>
           )}
@@ -1285,6 +1412,35 @@ export default function HomeTab() {
               onLock={handleLockCapture}
               lockingCaptureId={lockingCaptureId}
             />
+          ) : null}
+          {recentChunks && recentChunks.length > 0 ? (
+            <View style={styles.captureSection}>
+              <Text style={styles.sectionTitle}>Last scheduled chunks</Text>
+              <Text style={styles.sectionSubtext}>Showing the latest schedule response.</Text>
+              <View style={{ gap: 8 }}>
+                {recentChunks.map((chunk, idx) => {
+                  const start = new Date(chunk.start);
+                  const end = new Date(chunk.end);
+                  const windowStr = `${ start.toLocaleString([], { hour: '2-digit', minute: '2-digit' }) } -> ${ end.toLocaleString([], { hour: '2-digit', minute: '2-digit' }) } `;
+                  const flags = [
+                    chunk.late ? 'Late' : null,
+                    chunk.overlapped ? 'Overlapped' : null,
+                    chunk.prime ? 'Prime' : 'Background',
+                  ].filter(Boolean);
+                  return (
+                    <View key={`${ chunk.start } -${ chunk.end } -${ idx } `} style={styles.chunkRow}>
+                      <Text style={styles.chunkTime}>{windowStr}</Text>
+                      <Text style={styles.chunkFlags}>{flags.join(' | ')}</Text>
+                    </View>
+                  );
+                })}
+                {recentOverlapBudget ? (
+                  <Text style={styles.sectionSubtext}>
+                    Overlap budget: {recentOverlapBudget.used}/{recentOverlapBudget.limit} minutes used
+                  </Text>
+                ) : null}
+              </View>
+            </View>
           ) : null}
           {captureForm}
           {scheduledSection}
@@ -1343,12 +1499,12 @@ function CaptureCard({ capture, rank }: { capture: Capture; rank: number }) {
   return (
     <View style={styles.captureCard}>
       <View style={styles.captureCardHeader}>
-        <Text style={styles.captureRank}>{`#${rank}`}</Text>
+        <Text style={styles.captureRank}>{`#${ rank } `}</Text>
         <Text style={[styles.captureTitle, styles.captureTitleFlex]}>{capture.content}</Text>
       </View>
       <Text style={styles.captureMeta}>
         {'Importance: ' + (IMPORTANCE_LEVELS.find((it) => it.value === capture.importance)?.label ?? 'Medium')}
-        {capture.estimated_minutes ? ' · ~' + capture.estimated_minutes + ' min' : ''}
+        {capture.estimated_minutes ? ' | ~' + capture.estimated_minutes + ' min' : ''}
       </Text>
     </View>
   );
@@ -1373,7 +1529,7 @@ function ScheduledCard({
       <Text style={styles.captureTitle}>{capture.content}</Text>
       <Text style={styles.captureMeta}>
         {start ? start.toLocaleString() : 'Scheduled time unavailable'}
-        {end ? ` -> ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+        {end ? ` -> ${ end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) } ` : ''}
       </Text>
       <View style={styles.captureActions}>
         <TouchableOpacity
@@ -1398,6 +1554,9 @@ function ScheduledCard({
           </Text>
         </TouchableOpacity>
       </View>
+      <TouchableOpacity style={styles.whyLink} onPress={() => showScheduleWhy(capture)}>
+        <Text style={styles.whyText}>Why this time?</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -1410,8 +1569,11 @@ function ScheduledSummaryCard({ capture }: { capture: Capture }) {
       <Text style={styles.captureTitle}>{capture.content}</Text>
       <Text style={styles.captureMeta}>
         {start ? start.toLocaleString() : 'Scheduled time unavailable'}
-        {end ? ` -> ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+        {end ? ` -> ${ end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) } ` : ''}
       </Text>
+      <TouchableOpacity style={styles.whyLink} onPress={() => showScheduleWhy(capture)}>
+        <Text style={styles.whyText}>Why this time?</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -1478,19 +1640,19 @@ function describePlanAction(action: PlanSummary['actions'][number]) {
   const timeText = formatPlanRange(action.nextStart, action.nextEnd);
   const previousText = formatPlanRange(action.previousStart, action.previousEnd);
   if (action.actionType === 'scheduled') {
-    return `Scheduled “${action.content}” for ${timeText}`;
+    return `Scheduled “${ action.content }” for ${ timeText }`;
   }
   if (action.actionType === 'rescheduled') {
-    return `Moved “${action.content}” to ${timeText}`;
+    return `Moved “${ action.content }” to ${ timeText } `;
   }
-  return `Unscheduled “${action.content}” (was ${previousText})`;
+  return `Unscheduled “${ action.content }” (was ${ previousText })`;
 }
 
 function formatPlanRange(start: string | null, end: string | null) {
   if (!start) return 'unscheduled';
   const startText = formatPlanTime(start);
   const endText = end ? formatPlanTime(end) : '';
-  return endText ? `${startText} → ${endText}` : startText;
+  return endText ? `${startText} -> ${endText}` : startText;
 }
 
 function formatPlanTime(iso: string) {
@@ -1602,6 +1764,13 @@ const styles = StyleSheet.create({
   },
   primaryButtonDisabled: { opacity: 0.6 },
   primaryButtonText: { color: '#fff', fontWeight: '700' },
+  chunkRow: {
+    paddingVertical: 8,
+    borderBottomColor: '#E5E7EB',
+    borderBottomWidth: 1,
+  },
+  chunkTime: { fontSize: 14, fontWeight: '700', color: '#111827' },
+  chunkFlags: { fontSize: 12, color: '#6B7280' },
   secondaryButton: {
     borderRadius: 10,
     paddingVertical: 10,
@@ -1626,6 +1795,8 @@ const styles = StyleSheet.create({
   captureTitleFlex: { flex: 1 },
   captureMeta: { color: '#6B7280' },
   captureActions: { flexDirection: 'row', gap: 12, marginTop: 12 },
+  whyLink: { alignSelf: 'flex-start', marginTop: 8 },
+  whyText: { color: '#2563EB', fontWeight: '600' },
   card: {
     padding: 12,
     borderRadius: 12,

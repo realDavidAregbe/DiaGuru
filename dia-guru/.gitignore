@@ -36,6 +36,13 @@ yarn-error.*
 
 # local working notes
 DEV_NOTES.local.md
+PROGRESS.md
+Progress.pdf
+dia_guru_implementation_plan.md
+test_log.txt
+test_output.txt
+output.txt
+CamScanner *.pdf
 
 # typescript
 *.tsbuildinfo

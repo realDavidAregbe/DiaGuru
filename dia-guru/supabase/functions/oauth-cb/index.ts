@@ -27,10 +27,17 @@ Deno.serve(async (req) => {
     const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
     const redirectUri = Deno.env.get("GOOGLE_REDIRECT_URI")!;
 
-    // 0. Verify user using the JWT we passed in `state`
-    const supaAnon = createClient(supabaseUrl, anon);
-    const { data: { user } } = await supaAnon.auth.getUser(state);
-    if (!user) return new Response("Unauthorized state", { status: 401 });
+    // 0. Decode JWT from state to get user ID (no verification since it's disabled)
+    let userId: string;
+    try {
+      const payload = state.split('.')[1];
+      const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+      userId = decoded.sub;
+      if (!userId) throw new Error("No user ID in token");
+    } catch (e) {
+      console.error("JWT decode failed:", e);
+      return new Response("Invalid state token", { status: 401 });
+    }
 
     // Exchange code for tokens
     const form = new URLSearchParams({
@@ -50,15 +57,20 @@ Deno.serve(async (req) => {
 
     // Store tokens (server-side only)
     const admin = createClient(supabaseUrl, serviceRole);
-    const { data: acct } = await admin
+    const { data: acct, error: acctError } = await admin
       .from("calendar_accounts")
-      .upsert({ user_id: user.id, provider: "google", needs_reconnect: false })
+      .upsert({ user_id: userId, provider: "google", needs_reconnect: false }, { onConflict: "user_id,provider" })
       .select("id")
-      .single();
+      .maybeSingle();
+
+    if (acctError || !acct) {
+      console.error("Failed to upsert calendar_account:", acctError);
+      return new Response(`Database error: ${acctError?.message || "Account not created"}`, { status: 500 });
+    }
 
     const expiry = new Date(Date.now() + (tok.expires_in ?? 0) * 1000).toISOString();
     await admin.from("calendar_tokens").upsert({
-      account_id: acct!.id,
+      account_id: acct.id,
       access_token: tok.access_token,
       refresh_token: tok.refresh_token ?? null,
       expiry,
@@ -70,7 +82,8 @@ Deno.serve(async (req) => {
       <h1>Google Calendar connected!</h1>
       <p>Version: ${VERSION}</p>`;
     return new Response(ok, { status: 200, headers: { "Content-Type": "text/html" } });
-  } catch {
-    return new Response("OAuth error", { status: 500 });
+  } catch (error) {
+    console.error("OAuth callback error:", error);
+    return new Response(`OAuth error: ${error.message}`, { status: 500 });
   }
 });

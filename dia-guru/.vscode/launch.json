@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug schedule-capture tests",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": [
+        "test",
+        "--inspect-brk=127.0.0.1:9230",
+        "--no-check",
+        "--allow-all",
+        "--config",
+        "${workspaceFolder}/supabase/functions/deno.json"
+      ],
+      "program": "${workspaceFolder}/supabase/functions/schedule-capture/index.test.ts",
+      "attachSimplePort": 9230,
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "envFile": "${workspaceFolder}/supabase/functions/.env",
+      "env": {
+        "RUN_LIVE_SCHEDULE_CAPTURE_TEST": "1"
+      }
+    }
+  ]
+}
