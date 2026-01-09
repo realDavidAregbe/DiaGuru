@@ -171,82 +171,82 @@ function maskSecret(value: string) {
 // //   assertEquals(slot!.start.toISOString(), "2025-01-01T11:30:00.000Z");
 // // });
 
-// Deno.test("schedule-capture handler (live request)", async () => {
-//   console.log("Starting live schedule-capture test...");
-//   const runLive = (Deno.env.get("RUN_LIVE_SCHEDULE_CAPTURE_TEST") ?? "").trim();
-//   if (runLive !== "1") return;
+Deno.test("schedule-capture handler (live request)", async () => {
+  console.log("Starting live schedule-capture test...");
+  const runLive = (Deno.env.get("RUN_LIVE_SCHEDULE_CAPTURE_TEST") ?? "").trim();
+  if (runLive !== "1") return;
 
 
-//   const userBearer = Deno.env.get("TEST_USER_BEARER") ?? Deno.env.get("USER_BEARER");
-//   assert(userBearer, "Missing env TEST_USER_BEARER");
+  const userBearer = Deno.env.get("TEST_USER_BEARER") ?? Deno.env.get("USER_BEARER");
+  assert(userBearer, "Missing env TEST_USER_BEARER");
 
-//   const supabaseUrl =
-//     Deno.env.get("SUPABASE_URL") ?? Deno.env.get("EXPO_PUBLIC_SUPABASE_URL");
-//   if (supabaseUrl && !Deno.env.get("SUPABASE_URL")) {
-//     Deno.env.set("SUPABASE_URL", supabaseUrl);
-//   }
+  const supabaseUrl =
+    Deno.env.get("SUPABASE_URL") ?? Deno.env.get("EXPO_PUBLIC_SUPABASE_URL");
+  if (supabaseUrl && !Deno.env.get("SUPABASE_URL")) {
+    Deno.env.set("SUPABASE_URL", supabaseUrl);
+  }
 
-//   const anonKey =
-//     Deno.env.get("SUPABASE_ANON_KEY") ??
-//     Deno.env.get("ANON_KEY") ??
-//     Deno.env.get("EXPO_PUBLIC_SUPABASE_ANON_KEY");
-//   if (anonKey && !Deno.env.get("SUPABASE_ANON_KEY")) {
-//     Deno.env.set("SUPABASE_ANON_KEY", anonKey);
-//   }
+  const anonKey =
+    Deno.env.get("SUPABASE_ANON_KEY") ??
+    Deno.env.get("ANON_KEY") ??
+    Deno.env.get("EXPO_PUBLIC_SUPABASE_ANON_KEY");
+  if (anonKey && !Deno.env.get("SUPABASE_ANON_KEY")) {
+    Deno.env.set("SUPABASE_ANON_KEY", anonKey);
+  }
 
-//   const googleClientId =
-//     Deno.env.get("GOOGLE_CLIENT_ID") ?? Deno.env.get("EXPO_PUBLIC_GOOGLE_CLIENT_ID");
-//   if (googleClientId && !Deno.env.get("GOOGLE_CLIENT_ID")) {
-//     Deno.env.set("GOOGLE_CLIENT_ID", googleClientId);
-//   }
+  const googleClientId =
+    Deno.env.get("GOOGLE_CLIENT_ID") ?? Deno.env.get("EXPO_PUBLIC_GOOGLE_CLIENT_ID");
+  if (googleClientId && !Deno.env.get("GOOGLE_CLIENT_ID")) {
+    Deno.env.set("GOOGLE_CLIENT_ID", googleClientId);
+  }
 
-//   assert(supabaseUrl, "Missing env SUPABASE_URL");
-//   assert(anonKey, "Missing env SUPABASE_ANON_KEY");
-//   const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY");
-//   assert(serviceRoleKey, "Missing env SERVICE_ROLE_KEY");
-//   assert(googleClientId, "Missing env GOOGLE_CLIENT_ID");
-//   assert(Deno.env.get("GOOGLE_CLIENT_SECRET"), "Missing env GOOGLE_CLIENT_SECRET");
+  assert(supabaseUrl, "Missing env SUPABASE_URL");
+  assert(anonKey, "Missing env SUPABASE_ANON_KEY");
+  const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY");
+  assert(serviceRoleKey, "Missing env SERVICE_ROLE_KEY");
+  assert(googleClientId, "Missing env GOOGLE_CLIENT_ID");
+  assert(Deno.env.get("GOOGLE_CLIENT_SECRET"), "Missing env GOOGLE_CLIENT_SECRET");
 
-//   const serviceRolePayload = decodeJwtPayload(serviceRoleKey);
-//   console.log("Supabase URL:", supabaseUrl);
-//   console.log("Anon key:", maskSecret(anonKey));
-//   if (serviceRolePayload) {
-//     console.log("Service role key payload:", {
-//       iss: serviceRolePayload.iss,
-//       role: serviceRolePayload.role,
-//       ref: serviceRolePayload.ref,
-//     });
-//   } else {
-//     console.log("Service role key payload: <unreadable>");
-//   }
+  const serviceRolePayload = decodeJwtPayload(serviceRoleKey);
+  console.log("Supabase URL:", supabaseUrl);
+  console.log("Anon key:", maskSecret(anonKey));
+  if (serviceRolePayload) {
+    console.log("Service role key payload:", {
+      iss: serviceRolePayload.iss,
+      role: serviceRolePayload.role,
+      ref: serviceRolePayload.ref,
+    });
+  } else {
+    console.log("Service role key payload: <unreadable>");
+  }
 
-//   const timezone = Deno.env.get("TEST_TIMEZONE") ?? null;
-//   const offsetRaw = Deno.env.get("TEST_TZ_OFFSET_MINUTES");
-//   const timezoneOffsetMinutes = offsetRaw ? Number(offsetRaw) : undefined;
-//   console.log("Using timezone:", timezone, "offset minutes:", timezoneOffsetMinutes);
-//   const captureId = "8ee1841c-775a-449f-88f6-31a37f4f1644";
-//   const req = new Request("http://localhost/functions/v1/schedule-capture", {
-//     method: "POST",
-//     headers: {
-//       Authorization: `Bearer ${userBearer}`,
-//       "Content-Type": "application/json",
-//     },
-//     body: JSON.stringify({
-//       action: "schedule",
-//       captureId,
-//       allowOverlap: true,
-//       allowLatePlacement: true,
-//       timezone,
-//       timezoneOffsetMinutes,
-//     }),
-//   });
+  const timezone = Deno.env.get("TEST_TIMEZONE") ?? null;
+  const offsetRaw = Deno.env.get("TEST_TZ_OFFSET_MINUTES");
+  const timezoneOffsetMinutes = offsetRaw ? Number(offsetRaw) : undefined;
+  console.log("Using timezone:", timezone, "offset minutes:", timezoneOffsetMinutes);
+  const captureId = "83fc7414-28bf-4437-9aa5-9649ec9b90e8";
+  const req = new Request("http://localhost/functions/v1/schedule-capture", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${userBearer}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      action: "schedule",
+      captureId,
+      allowOverlap: true,
+      allowLatePlacement: true,
+      timezone,
+      timezoneOffsetMinutes,
+    }),
+  });
 
-//   const res = await handler(req);
-//   const data = await res.json().catch(() => ({}));
-//   console.log("Response data:", data);
-//   assert(res.ok || res.status === 409, `Unexpected status ${res.status}: ${JSON.stringify(data)}`);
-//   assert(data && (data.message || data.decision || data.error));
-// });
+  const res = await handler(req);
+  const data = await res.json().catch(() => ({}));
+  console.log("Response data:", data);
+  assert(res.ok || res.status === 409, `Unexpected status ${res.status}: ${JSON.stringify(data)}`);
+  assert(data && (data.message || data.decision || data.error));
+});
 
 
 // --- Mapping tests ---
