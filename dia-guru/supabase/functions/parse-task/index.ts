@@ -104,6 +104,29 @@ type CaptureMapping = {
   start_target_at: string | null;
   is_soft_start: boolean;
   task_type_hint: string | null;
+
+  scheduled_source?: "explicit" | "inferred" | null;
+  scheduled_precision?: "exact" | "approximate" | null;
+  execution_window_relation?: "before_deadline" | "after_deadline" | "around_scheduled" | "between" | "on_day" | "anytime" | null;
+  execution_window_source?: "explicit" | "inferred" | "default" | null;
+  time_preferences?: { time_of_day?: "morning" | "afternoon" | "evening" | "night" | null; day?: "today" | "tomorrow" | "specific_date" | "any" | null } | null;
+  importance?: {
+    urgency?: 1 | 2 | 3 | 4 | 5;
+    impact?: 1 | 2 | 3 | 4 | 5;
+    reschedule_penalty?: 0 | 1 | 2 | 3;
+    blocking?: boolean;
+    rationale?: string;
+  } | null;
+  flexibility?: {
+    cannot_overlap?: boolean;
+    start_flexibility?: "hard" | "soft" | "anytime";
+    duration_flexibility?: "fixed" | "split_allowed";
+    min_chunk_minutes?: number | null;
+    max_splits?: number | null;
+  } | null;
+  missing?: string[] | null;
+  clarifying_question?: string | null;
+  notes?: string[] | null;
 };
 
 const DEFAULT_TIMEZONE = "UTC";
@@ -757,7 +780,7 @@ function buildExtractionPrompts(input: { content: string; timezone: string; refe
   return { systemPrompt, userPrompt };
 }
 
-function normalizeExtraction(obj: any): DiaGuruTaskExtraction | null {
+export function normalizeExtraction(obj: any): DiaGuruTaskExtraction | null {
   if (!obj || typeof obj !== "object") return null;
   const s = (v: any) => (typeof v === "string" ? v : null);
   const n = (v: any) => {
@@ -838,31 +861,33 @@ function normalizeExtraction(obj: any): DiaGuruTaskExtraction | null {
   };
 }
 
-function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
-  // Defaults
+export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
+  const scheduledAt = ex.scheduled_time?.datetime ?? null;
+
+  const windowRelation =
+    ex.execution_window?.relation === "between" ||
+    ex.execution_window?.relation === "on_day";
+  const windowStart = windowRelation ? (ex.execution_window?.start ?? null) : null;
+  const windowEnd   = windowRelation ? (ex.execution_window?.end ?? null) : null;
+
+  const hasWindow = Boolean(windowStart || windowEnd);
+  const hasDeadline = Boolean(ex.deadline?.datetime);
+
+  // Always preserve extracted facts (metadata), regardless of precedence
+  let deadline_at: string | null = ex.deadline?.datetime ?? null;
+  let window_start: string | null = windowStart;
+  let window_end: string | null = windowEnd;
+
+  // Driver constraint fields (what scheduling actually uses)
   let constraint_type: CaptureMapping["constraint_type"] = "flexible";
   let constraint_time: string | null = null;
   let constraint_end: string | null = null;
   let constraint_date: string | null = null;
   let original_target_time: string | null = null;
-  let deadline_at: string | null = ex.deadline?.datetime ?? null;
-  let window_start: string | null = null;
-  let window_end: string | null = null;
   let start_target_at: string | null = null;
   let is_soft_start = false;
-  let task_type_hint: string | null = ex.kind ?? ex.title;
 
-  const scheduledAt = ex.scheduled_time?.datetime ?? null;
-  const scheduledExplicit = Boolean(
-    scheduledAt && ex.scheduled_time?.source === "explicit",
-  );
-  const windowRelation =
-    ex.execution_window?.relation === "between" ||
-    ex.execution_window?.relation === "on_day";
-  const windowStart = ex.execution_window?.start ?? null;
-  const windowEnd = ex.execution_window?.end ?? null;
-  const hasWindow = Boolean(windowRelation && (windowStart || windowEnd));
-  const hasDeadline = Boolean(ex.deadline?.datetime);
+  const scheduledExplicit = Boolean(scheduledAt && ex.scheduled_time?.source === "explicit");
 
   if (scheduledExplicit && scheduledAt) {
     constraint_type = "start_time";
@@ -870,24 +895,23 @@ function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
     original_target_time = scheduledAt;
     start_target_at = scheduledAt;
     is_soft_start = false;
-    deadline_at = hasDeadline ? ex.deadline!.datetime : deadline_at;
   } else if (hasWindow) {
     constraint_type = "window";
     constraint_time = windowStart;
     constraint_end = windowEnd;
-    window_start = windowStart;
-    window_end = windowEnd;
-  } else if (hasDeadline) {
+  } else if (hasDeadline && deadline_at) {
     constraint_type = "deadline_time";
-    constraint_time = ex.deadline!.datetime;
-    deadline_at = ex.deadline!.datetime;
-    window_end = ex.deadline!.datetime;
+    constraint_time = deadline_at;
+
+    // Only synthesize window_end from deadline if you don't already have a window end.
+    if (!window_end) window_end = deadline_at;
   } else if (scheduledAt) {
     constraint_type = "start_time";
     constraint_time = scheduledAt;
     original_target_time = scheduledAt;
     start_target_at = scheduledAt;
-    is_soft_start = ex.scheduled_time?.precision === "approximate" ||
+    is_soft_start =
+      ex.scheduled_time?.precision === "approximate" ||
       ex.scheduled_time?.source === "inferred";
   }
 
@@ -903,9 +927,22 @@ function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
     window_end,
     start_target_at,
     is_soft_start,
-    task_type_hint,
+    task_type_hint: ex.kind ?? ex.title,
+
+    // metadata passthrough
+    scheduled_source: ex.scheduled_time?.source ?? null,
+    scheduled_precision: ex.scheduled_time?.precision ?? null,
+    execution_window_relation: ex.execution_window?.relation ?? null,
+    execution_window_source: ex.execution_window?.source ?? null,
+    time_preferences: ex.time_preferences ?? null,
+    importance: ex.importance ?? null,
+    flexibility: ex.flexibility ?? null,
+    missing: Array.isArray(ex.missing) ? ex.missing.slice() : null,
+    clarifying_question: ex.clarifying_question ?? null,
+    notes: Array.isArray(ex.notes) ? ex.notes.slice() : null,
   };
 }
+
 
 function captureProposalReason(ex: DiaGuruTaskExtraction): string {
   const bits: string[] = [];
@@ -1161,3 +1198,5 @@ function getTimezoneOffsetMinutes(date: Date, timeZone: string) {
   const utcDate = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
   return (localDate.getTime() - utcDate.getTime()) / 60000;
 }
+
+

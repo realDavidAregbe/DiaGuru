@@ -127,32 +127,116 @@ function formatConflictMessage(decision: ScheduleDecision) {
   return lines.join('\n');
 }
 
+function normalizeExtractionJson(value: unknown) {
+  if (!value) return null;
+  if (typeof value === 'object') return value as Record<string, unknown>;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object') {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function formatIsoLabel(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
+function extractReasonsFromExtraction(extraction: Record<string, unknown> | null) {
+  if (!extraction) return [];
+  const reasons: string[] = [];
+  const ex = extraction as {
+    scheduled_time?: { datetime?: string | null } | null;
+    execution_window?: { start?: string | null; end?: string | null } | null;
+    deadline?: { datetime?: string | null } | null;
+    time_preferences?: { time_of_day?: string | null; day?: string | null } | null;
+    importance?: { rationale?: string | null } | null;
+  };
+
+  const scheduledLabel = formatIsoLabel(ex.scheduled_time?.datetime ?? null);
+  if (scheduledLabel) {
+    reasons.push(`Requested time: ${scheduledLabel}.`);
+  }
+
+  const windowStart = formatIsoLabel(ex.execution_window?.start ?? null);
+  const windowEnd = formatIsoLabel(ex.execution_window?.end ?? null);
+  if (windowStart || windowEnd) {
+    const range = windowStart && windowEnd ? `${windowStart} -> ${windowEnd}` : windowStart ?? windowEnd;
+    reasons.push(`Requested window: ${range}.`);
+  }
+
+  const deadlineLabel = formatIsoLabel(ex.deadline?.datetime ?? null);
+  if (deadlineLabel) {
+    reasons.push(`Deadline: ${deadlineLabel}.`);
+  }
+
+  if (ex.time_preferences?.time_of_day) {
+    reasons.push(`Time preference: ${ex.time_preferences.time_of_day}.`);
+  }
+  if (ex.time_preferences?.day) {
+    reasons.push(`Day preference: ${ex.time_preferences.day}.`);
+  }
+
+  if (ex.importance?.rationale) {
+    reasons.push(ex.importance.rationale);
+  }
+
+  return reasons;
+}
+
 function extractScheduleReasons(capture: Capture) {
   const fallback = 'Scheduled by DiaGuru based on your constraints.';
   const raw = capture.scheduling_notes;
-  if (!raw || typeof raw !== 'string') return [fallback];
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
-      const scheduleExplanation = (parsed as Record<string, unknown>).schedule_explanation as
-        | { reasons?: unknown }
-        | undefined;
-      if (scheduleExplanation?.reasons && Array.isArray(scheduleExplanation.reasons)) {
-        const reasons = scheduleExplanation.reasons.map((reason) => String(reason)).filter((r) => r.trim().length > 0);
-        if (reasons.length > 0) return reasons;
+  const scheduleReasons: string[] = [];
+  let scheduleNote: string | null = null;
+
+  if (raw && typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        const scheduleExplanation = (parsed as Record<string, unknown>).schedule_explanation as
+          | { reasons?: unknown }
+          | undefined;
+        if (scheduleExplanation?.reasons && Array.isArray(scheduleExplanation.reasons)) {
+          const reasons = scheduleExplanation.reasons
+            .map((reason) => String(reason))
+            .filter((r) => r.trim().length > 0);
+          scheduleReasons.push(...reasons);
+        }
+        const note = (parsed as Record<string, unknown>).schedule_note;
+        if (typeof note === 'string' && note.trim().length > 0) {
+          scheduleNote = note.trim();
+        }
       }
-      const scheduleNote = (parsed as Record<string, unknown>).schedule_note;
-      if (typeof scheduleNote === 'string' && scheduleNote.trim().length > 0) {
-        return [scheduleNote.trim()];
-      }
+    } catch {
+      scheduleNote = raw.trim() || null;
     }
-  } catch {
-    // fall through to raw fallback
   }
 
-  const trimmed = raw.trim();
-  if (trimmed) return [trimmed];
-  return [fallback];
+  const extractionReasons = extractReasonsFromExtraction(
+    normalizeExtractionJson(capture.extraction_json),
+  );
+
+  const combined = scheduleReasons.length > 0
+    ? scheduleReasons
+    : scheduleNote
+      ? [scheduleNote]
+      : [];
+
+  if (combined.length < 2 && extractionReasons.length > 0) {
+    combined.push(...extractionReasons);
+  }
+
+  const unique = Array.from(new Set(combined.map((reason) => reason.trim()).filter(Boolean)));
+  return unique.length > 0 ? unique.slice(0, 5) : [fallback];
 }
 
 function showScheduleWhy(capture: Capture) {
@@ -928,11 +1012,12 @@ export default function HomeTab() {
           minChunkMinutes: extraction?.flexibility?.min_chunk_minutes ?? null,
           maxSplits: extraction?.flexibility?.max_splits ?? null,
           extractionKind: extraction?.kind ?? null,
-          timePrefTimeOfDay: extraction?.time_preferences?.time_of_day ?? null,
-          timePrefDay: extraction?.time_preferences?.day ?? null,
-          importanceRationale: extraction?.importance?.rationale ?? null,
-          schedulingNotes,
-          constraintType: constraint.constraintType,
+            timePrefTimeOfDay: extraction?.time_preferences?.time_of_day ?? null,
+            timePrefDay: extraction?.time_preferences?.day ?? null,
+            importanceRationale: extraction?.importance?.rationale ?? null,
+            schedulingNotes,
+            extractionJson: extraction ?? null,
+            constraintType: constraint.constraintType,
           constraintTime: constraint.constraintTime,
           constraintEnd: constraint.constraintEnd,
           constraintDate: constraint.constraintDate,

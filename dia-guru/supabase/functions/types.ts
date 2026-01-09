@@ -18,6 +18,7 @@ export type CaptureEntryRow = {
   planned_end: string | null;
   last_check_in: string | null;
   scheduling_notes?: string | null;
+  extraction_json?: Record<string, unknown> | null;
   constraint_type: string;
   constraint_time: string | null;
   constraint_end: string | null;
