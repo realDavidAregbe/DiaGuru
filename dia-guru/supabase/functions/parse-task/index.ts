@@ -862,78 +862,115 @@ export function normalizeExtraction(obj: any): DiaGuruTaskExtraction | null {
 }
 
 export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
+  // --- Pull raw values (lossless) ---
   const scheduledAt = ex.scheduled_time?.datetime ?? null;
+  const scheduledSource = ex.scheduled_time?.source ?? null;
+  const scheduledPrecision = ex.scheduled_time?.precision ?? null;
 
-  const windowRelation =
-    ex.execution_window?.relation === "between" ||
-    ex.execution_window?.relation === "on_day";
-  const windowStart = windowRelation ? (ex.execution_window?.start ?? null) : null;
-  const windowEnd   = windowRelation ? (ex.execution_window?.end ?? null) : null;
+  const deadlineAt = ex.deadline?.datetime ?? null;
 
-  const hasWindow = Boolean(windowStart || windowEnd);
-  const hasDeadline = Boolean(ex.deadline?.datetime);
+  const windowRelation = ex.execution_window?.relation ?? null;
+  const windowSource = ex.execution_window?.source ?? null;
+  const windowStart = ex.execution_window?.start ?? null;
+  const windowEnd = ex.execution_window?.end ?? null;
 
-  // Always preserve extracted facts (metadata), regardless of precedence
-  let deadline_at: string | null = ex.deadline?.datetime ?? null;
-  let window_start: string | null = windowStart;
-  let window_end: string | null = windowEnd;
+  const hasDeadline = Boolean(deadlineAt);
+  const hasScheduled = Boolean(scheduledAt);
 
-  // Driver constraint fields (what scheduling actually uses)
+  // Treat these as "window-ish" in V1. (around_scheduled is critical for “in 30 minutes”.)
+  const isWindowRelation =
+    windowRelation === "between" ||
+    windowRelation === "on_day" ||
+    windowRelation === "around_scheduled" ||
+    windowRelation === "before_deadline" ||
+    windowRelation === "after_deadline";
+
+  // Only consider it a usable window if we have at least one bound.
+  const hasWindow = Boolean(isWindowRelation && (windowStart || windowEnd));
+
+  const scheduledExplicit = Boolean(hasScheduled && scheduledSource === "explicit");
+
+  // --- Defaults (but keep lossless columns initialized from ex when possible) ---
   let constraint_type: CaptureMapping["constraint_type"] = "flexible";
   let constraint_time: string | null = null;
   let constraint_end: string | null = null;
   let constraint_date: string | null = null;
+
+  // These should preserve intent / details even if not primary constraint:
+  let deadline_at: string | null = deadlineAt;
+  let window_start: string | null = windowStart;
+  let window_end: string | null = windowEnd;
+
   let original_target_time: string | null = null;
   let start_target_at: string | null = null;
   let is_soft_start = false;
 
-  const scheduledExplicit = Boolean(scheduledAt && ex.scheduled_time?.source === "explicit");
+  // Prefer "kind" for task_type_hint; fall back to title if you use that as a hint.
+  // (Some extractions use `title` not `kind`.)
+  const task_type_hint: string | null = (ex.kind ?? (ex as any).title) ?? null;
 
+  // --- Precedence for PRIMARY scheduling constraint ---
   if (scheduledExplicit && scheduledAt) {
+    // Explicit time wins (anchor start_time).
     constraint_type = "start_time";
     constraint_time = scheduledAt;
+
+    // Keep for traceability.
     original_target_time = scheduledAt;
     start_target_at = scheduledAt;
     is_soft_start = false;
-  } else if (hasWindow) {
-    constraint_type = "window";
-    constraint_time = windowStart;
-    constraint_end = windowEnd;
-  } else if (hasDeadline && deadline_at) {
-    constraint_type = "deadline_time";
-    constraint_time = deadline_at;
 
-    // Only synthesize window_end from deadline if you don't already have a window end.
-    if (!window_end) window_end = deadline_at;
-  } else if (scheduledAt) {
+    // NOTE: window_start/window_end and deadline_at remain preserved from extraction
+    // (lossless behavior).
+  } else if (hasWindow) {
+    // Window constraint is primary.
+    constraint_type = "window";
+    constraint_time = windowStart; // can be null if only end exists
+    constraint_end = windowEnd; // can be null if only start exists
+
+    // window_start/window_end already preserved from extraction.
+  } else if (hasDeadline && deadlineAt) {
+    // Deadline is primary.
+    constraint_type = "deadline_time";
+    constraint_time = deadlineAt;
+
+    // Keep deadline_at preserved; window_end may remain if extraction had it.
+    // (Do NOT invent window_end = deadline unless your DB contract requires it.)
+  } else if (hasScheduled && scheduledAt) {
+    // Inferred/approx scheduled time becomes a soft start_time.
     constraint_type = "start_time";
     constraint_time = scheduledAt;
+
     original_target_time = scheduledAt;
     start_target_at = scheduledAt;
-    is_soft_start =
-      ex.scheduled_time?.precision === "approximate" ||
-      ex.scheduled_time?.source === "inferred";
+
+    is_soft_start = scheduledPrecision === "approximate" || scheduledSource === "inferred";
   }
 
-  return {
+  // --- Build mapping (include metadata so you can debug later) ---
+  const captureMapping: CaptureMapping = {
     estimated_minutes: ex.estimated_minutes ?? null,
+
+    // primary constraint
     constraint_type,
     constraint_time,
     constraint_end,
     constraint_date,
+
+    // preserved detail fields
     original_target_time,
     deadline_at,
     window_start,
     window_end,
     start_target_at,
     is_soft_start,
-    task_type_hint: ex.kind ?? ex.title,
+    task_type_hint,
 
-    // metadata passthrough
-    scheduled_source: ex.scheduled_time?.source ?? null,
-    scheduled_precision: ex.scheduled_time?.precision ?? null,
-    execution_window_relation: ex.execution_window?.relation ?? null,
-    execution_window_source: ex.execution_window?.source ?? null,
+    // metadata / explanation inputs
+    scheduled_source: scheduledSource,
+    scheduled_precision: scheduledPrecision,
+    execution_window_relation: windowRelation,
+    execution_window_source: windowSource,
     time_preferences: ex.time_preferences ?? null,
     importance: ex.importance ?? null,
     flexibility: ex.flexibility ?? null,
@@ -941,6 +978,8 @@ export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMappin
     clarifying_question: ex.clarifying_question ?? null,
     notes: Array.isArray(ex.notes) ? ex.notes.slice() : null,
   };
+
+  return captureMapping;
 }
 
 
