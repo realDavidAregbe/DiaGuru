@@ -54,7 +54,11 @@ type ParseResponse = {
 type DiaGuruTaskExtraction = {
   title: string | null;
   estimated_minutes: number | null;
-  deadline: { datetime: string | null; kind: "hard" | "soft" | null; source: "explicit" | "inferred" | null } | null;
+  deadline: {
+    datetime: string | null;
+    kind: "hard" | "soft" | null;
+    source: "explicit" | "inferred" | "inferred_working_hours" | "inferred_sleep" | null;
+  } | null;
   scheduled_time: { datetime: string | null; precision: "exact" | "approximate" | null; source: "explicit" | "inferred" | null } | null;
   execution_window: {
     relation:
@@ -763,11 +767,11 @@ function buildExtractionPrompts(input: { content: string; timezone: string; refe
   const schema = `{
   "title": string | null,
   "estimated_minutes": number | null,
-  "deadline": {
-    "datetime": string | null,
-    "kind": "hard" | "soft" | null,
-    "source": "explicit" | "inferred" | null
-  } | null,
+    "deadline": {
+      "datetime": string | null,
+      "kind": "hard" | "soft" | null,
+      "source": "explicit" | "inferred" | "inferred_working_hours" | "inferred_sleep" | null
+    } | null,
   "scheduled_time": {
     "datetime": string | null,
     "precision": "exact" | "approximate" | null,
@@ -813,11 +817,13 @@ Rules:
 - Infer a reasonable "estimated_minutes" when possible.
 - Use provided Timezone and Now for relative phrases.
 - All datetime outputs MUST be ISO 8601 with explicit timezone (Z or +HH:MM/-HH:MM). Never output a local time with trailing Z.
-- Treat "due/by/deadline/hand in" as DEADLINES (set deadline.datetime/kind and execution_window.relation=before_deadline; execution_window.end=deadline).
-- "at 3pm work on X" -> scheduled_time.datetime (+precision), execution_window.relation=around_scheduled.
-- "between 3 and 5" or "tomorrow afternoon" -> execution_window.relation=between/on_day and fill start/end when resolvable.
-- time_preferences captures soft hints (morning/evening/tomorrow).
-- If anything is missing, include one concise clarifying_question.`;
+  - Treat "due/by/deadline/hand in" as DEADLINES (set deadline.datetime/kind and execution_window.relation=before_deadline; execution_window.end=deadline).
+  - "at 3pm work on X" -> scheduled_time.datetime (+precision), execution_window.relation=around_scheduled.
+  - "between 3 and 5" or "tomorrow afternoon" -> execution_window.relation=between/on_day and fill start/end when resolvable.
+  - For phrases like "before sleep tonight" / "before bed tonight", treat them as "before end of working hours" (22:00 local) unless the user explicitly gives a later bedtime.
+  - Do not infer deadlines after WorkingHours end unless the user explicitly requests.
+  - time_preferences captures soft hints (morning/evening/tomorrow).
+  - If anything is missing, include one concise clarifying_question.`;
   const systemPrompt = `You are a task extraction assistant for DiaGuru.\n${rules}\nSchema:\n${schema}`;
   let localNow = input.referenceNow.toISOString();
   let offsetMinutes = 0;
@@ -845,7 +851,10 @@ export function normalizeExtraction(obj: any): DiaGuruTaskExtraction | null {
     ? {
       datetime: s(obj.deadline.datetime),
       kind: one(obj.deadline.kind, ["hard", "soft"] as const),
-      source: one(obj.deadline.source, ["explicit", "inferred"] as const),
+      source: one(
+        obj.deadline.source,
+        ["explicit", "inferred", "inferred_working_hours", "inferred_sleep"] as const,
+      ),
     }
     : null;
   const scheduled_time = obj.scheduled_time && typeof obj.scheduled_time === "object"
@@ -1068,7 +1077,7 @@ function applyRoutineNormalization(args: {
   }
 
   if (/\bbefore (i )?sleep\b/i.test(content)) {
-    applyBeforeSleepDeadline(extraction, timezone, referenceNow);
+    applyBeforeSleepDeadline(extraction, timezone, referenceNow, { enforceWorkingWindow: true });
   }
 }
 
@@ -1185,30 +1194,59 @@ function normalizeMealExtraction(
   }
 }
 
-function applyBeforeSleepDeadline(extraction: DiaGuruTaskExtraction, timezone: string, referenceNow: Date) {
-  const defaultDeadline = buildZonedDateTime({
-    timezone,
-    reference: referenceNow,
-    hour: 23,
-    minute: 30,
-  });
+function applyBeforeSleepDeadline(
+  extraction: DiaGuruTaskExtraction,
+  timezone: string,
+  referenceNow: Date,
+  options?: { enforceWorkingWindow?: boolean },
+) {
+  const enforceWorkingWindow = options?.enforceWorkingWindow ?? true;
+  const hasDeadline = Boolean(extraction.deadline?.datetime);
+  const hasWindow = Boolean(extraction.execution_window);
+  let appliedDeadline: string | null = null;
+  let appliedSource: "inferred_working_hours" | "inferred_sleep" | null = null;
 
-  if (!extraction.deadline) {
-    extraction.deadline = { datetime: defaultDeadline, kind: "soft", source: "inferred" };
-  } else {
-    extraction.deadline.datetime = defaultDeadline;
-    extraction.deadline.kind = extraction.deadline.kind === "hard" ? "soft" : extraction.deadline.kind;
-    extraction.deadline.source = extraction.deadline.source ?? "inferred";
+  if (!hasDeadline) {
+    const fallbackTime = enforceWorkingWindow
+      ? { hour: 22, minute: 0, source: "inferred_working_hours" as const }
+      : resolveSleepDefaultTime();
+    appliedDeadline = buildZonedDateTime({
+      timezone,
+      reference: referenceNow,
+      hour: fallbackTime.hour,
+      minute: fallbackTime.minute,
+    });
+    appliedSource = fallbackTime.source;
+    extraction.deadline = { datetime: appliedDeadline, kind: "soft", source: appliedSource };
   }
 
-  extraction.execution_window = extraction.execution_window ?? {
-    relation: "before_deadline",
-    start: null,
-    end: defaultDeadline,
-    source: "default",
+  const windowEnd = extraction.deadline?.datetime ?? appliedDeadline;
+  if (!hasWindow && windowEnd) {
+    extraction.execution_window = {
+      relation: "before_deadline",
+      start: null,
+      end: windowEnd,
+      source: "default",
+    };
+  }
+
+  if (appliedSource) {
+    extraction.notes = extraction.notes ?? [];
+    extraction.notes.push("before_sleep_policy_applied=true");
+  }
+}
+
+function resolveSleepDefaultTime() {
+  const raw = Deno.env.get("SLEEP_DEADLINE_LOCAL_TIME") ?? "23:30";
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(raw.trim());
+  if (!match) {
+    return { hour: 23, minute: 30, source: "inferred_sleep" as const };
+  }
+  return {
+    hour: Number(match[1]),
+    minute: Number(match[2]),
+    source: "inferred_sleep" as const,
   };
-  extraction.execution_window.relation = "before_deadline";
-  extraction.execution_window.end = defaultDeadline;
 }
 
 function hasExplicitWindow(extraction: DiaGuruTaskExtraction) {
