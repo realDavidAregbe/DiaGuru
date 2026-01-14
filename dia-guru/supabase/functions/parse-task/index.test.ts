@@ -2,7 +2,7 @@ import { assertEquals, assertStringIncludes } from "std/assert";
 
 import { __test__ } from "./index.ts";
 
-const { cleanupQuestion, buildDeepSeekUserPrompt } = __test__;
+const { buildExtractionPrompts, cleanupQuestion, buildDeepSeekUserPrompt } = __test__;
 
 Deno.test("cleanupQuestion flattens whitespace", () => {
   const prompt = cleanupQuestion("\nHow long will it take?\n");
@@ -32,4 +32,15 @@ Deno.test("buildDeepSeekUserPrompt mentions ambiguous time context", () => {
   const normalized = prompt.toLowerCase();
   assertStringIncludes(normalized, "ambiguous time");
   assertStringIncludes(normalized, "6");
+});
+
+Deno.test("buildExtractionPrompts includes local ISO with offset", () => {
+  const referenceNow = new Date("2026-01-09T21:30:18.000Z");
+  const { userPrompt } = buildExtractionPrompts({
+    content: "Call a friend in 2 hours",
+    timezone: "America/Chicago",
+    referenceNow,
+  });
+  assertStringIncludes(userPrompt, "TimezoneOffsetMinutes: -360");
+  assertStringIncludes(userPrompt, "Now (Local ISO): 2026-01-09T15:30:18-06:00");
 });

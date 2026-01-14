@@ -26,3 +26,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/deno.json"
 entrypoint = "./functions/sync-captures/index.ts"
+
+[functions.reset-test-data]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deno.json"
+entrypoint = "./functions/reset-test-data/index.ts"

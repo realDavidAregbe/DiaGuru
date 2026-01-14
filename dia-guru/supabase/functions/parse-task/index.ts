@@ -698,6 +698,7 @@ function cleanupQuestion(question: string) {
 
 export const __test__ = {
   cleanupQuestion,
+  buildExtractionPrompts,
   buildDeepSeekUserPrompt,
 };
 
@@ -725,6 +726,39 @@ function extractFirstJsonObject(text: string): string | null {
   if (first >= 0 && last > first) return text.slice(first, last + 1).trim();
   return null;
 }
+
+function formatOffsetMinutes(offsetMinutes: number) {
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const abs = Math.abs(Math.round(offsetMinutes));
+  const hours = String(Math.floor(abs / 60)).padStart(2, "0");
+  const minutes = String(abs % 60).padStart(2, "0");
+  return `${sign}${hours}:${minutes}`;
+}
+
+function formatLocalIsoWithOffset(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(date);
+  const lookup = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
+  const year = lookup("year");
+  const month = lookup("month");
+  const day = lookup("day");
+  const hour = lookup("hour");
+  const minute = lookup("minute");
+  const second = lookup("second");
+  const offsetMinutes = getTimezoneOffsetMinutes(date, timeZone);
+  const offset = formatOffsetMinutes(offsetMinutes);
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${offset}`;
+}
+
 function buildExtractionPrompts(input: { content: string; timezone: string; referenceNow: Date }) {
   const schema = `{
   "title": string | null,
@@ -768,15 +802,32 @@ function buildExtractionPrompts(input: { content: string; timezone: string; refe
   "clarifying_question": string | null,
   "notes": string[]
 }`;
-  const rules = `Goals:\n- Interpret the user's text as a task they want to DO.\n- Distinguish clearly between DEADLINE (due/by) and SCHEDULED TIME (when to work).\n- Model how the work should be arranged in time (execution window).\n\nRules:\n- Respond ONLY with minified JSON.\n- If value is explicit or reasonably inferred, fill it; otherwise set null and add to \"missing\".\n- Infer a reasonable \"estimated_minutes\" when possible.\n- Use provided Timezone and Now for relative phrases.\n- Treat \"due/by/deadline/hand in\" as DEADLINES (set deadline.datetime/kind and execution_window.relation=before_deadline; execution_window.end=deadline).\n- \"at 3pm work on X\" → scheduled_time.datetime (+precision), execution_window.relation=around_scheduled.\n- \"between 3 and 5\" or \"tomorrow afternoon\" → execution_window.relation=between/on_day and fill start/end when resolvable.\n- time_preferences captures soft hints (morning/evening/tomorrow).\n- If anything is missing, include one concise clarifying_question.`;
+  const rules = `Goals:
+- Interpret the user's text as a task they want to DO.
+- Distinguish clearly between DEADLINE (due/by) and SCHEDULED TIME (when to work).
+- Model how the work should be arranged in time (execution window).
+
+Rules:
+- Respond ONLY with minified JSON.
+- If value is explicit or reasonably inferred, fill it; otherwise set null and add to "missing".
+- Infer a reasonable "estimated_minutes" when possible.
+- Use provided Timezone and Now for relative phrases.
+- All datetime outputs MUST be ISO 8601 with explicit timezone (Z or +HH:MM/-HH:MM). Never output a local time with trailing Z.
+- Treat "due/by/deadline/hand in" as DEADLINES (set deadline.datetime/kind and execution_window.relation=before_deadline; execution_window.end=deadline).
+- "at 3pm work on X" -> scheduled_time.datetime (+precision), execution_window.relation=around_scheduled.
+- "between 3 and 5" or "tomorrow afternoon" -> execution_window.relation=between/on_day and fill start/end when resolvable.
+- time_preferences captures soft hints (morning/evening/tomorrow).
+- If anything is missing, include one concise clarifying_question.`;
   const systemPrompt = `You are a task extraction assistant for DiaGuru.\n${rules}\nSchema:\n${schema}`;
   let localNow = input.referenceNow.toISOString();
+  let offsetMinutes = 0;
   try {
-    localNow = input.referenceNow.toLocaleString("en-US", { timeZone: input.timezone, hour12: false });
+    localNow = formatLocalIsoWithOffset(input.referenceNow, input.timezone);
+    offsetMinutes = getTimezoneOffsetMinutes(input.referenceNow, input.timezone);
   } catch (e) {
     localNow = `${input.referenceNow.toISOString()} (UTC)`;
   }
-  const userPrompt = `Text: """${input.content}"""\nTimezone: ${input.timezone}\nNow (UTC): ${input.referenceNow.toISOString()}\nNow (Local): ${localNow}\nWorkingHours: 08:00-22:00 (local)`;
+  const userPrompt = `Text: """${input.content}"""\nTimezone: ${input.timezone}\nTimezoneOffsetMinutes: ${offsetMinutes}\nNow (UTC): ${input.referenceNow.toISOString()}\nNow (Local ISO): ${localNow}\nWorkingHours: 08:00-22:00 (local)`;
   return { systemPrompt, userPrompt };
 }
 
