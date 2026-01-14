@@ -31,3 +31,7 @@ How to test (Step 3):
 
 
 ## Next steps: understand logic for computeBusyIntervals and findNextAvailableSlot so that i can debug
+
+### Just changed from primary calendar to test for quick deletion script, Must change back to primary when releasing for other users. 
+
+- // const GOOGLE_EVENTS = "https://www.googleapis.com/calendar/v3/calendars/primary/events";

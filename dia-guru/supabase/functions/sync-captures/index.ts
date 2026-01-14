@@ -2,7 +2,10 @@ import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CalendarTokenRow, CaptureEntryRow, Database } from "../types.ts";
 
-const GOOGLE_EVENTS = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+const TEST_CALENDAR_ID = encodeURIComponent(
+  "01c2ff9a9282ccc1fea448dfa1c4bd6389ef453e0d6e4c047d8413423f19f460@group.calendar.google.com",
+);
+const GOOGLE_EVENTS = `https://www.googleapis.com/calendar/v3/calendars/${TEST_CALENDAR_ID}/events`;
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
 const MANUAL_FREEZE_DURATION_MS = 24 * 60 * 60 * 1000;
 

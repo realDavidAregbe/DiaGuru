@@ -17,6 +17,10 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const { createGoogleCalendarActions } = scheduleTestUtils;
+const TEST_CALENDAR_ID = encodeURIComponent(
+  "01c2ff9a9282ccc1fea448dfa1c4bd6389ef453e0d6e4c047d8413423f19f460@group.calendar.google.com",
+);
+const GOOGLE_EVENTS = `https://www.googleapis.com/calendar/v3/calendars/${TEST_CALENDAR_ID}/events`;
 
 type AdminStubState = {
   account: CalendarAccountRow | null;
@@ -217,7 +221,7 @@ Deno.test("createGoogleCalendarActions retries once after 401 and refreshes toke
 
   let eventCalls = 0;
   const restore = stubFetch(async (url) => {
-    if (url.startsWith("https://www.googleapis.com/calendar/v3/calendars/primary/events")) {
+    if (url.startsWith(GOOGLE_EVENTS)) {
       eventCalls += 1;
       if (eventCalls === 1) {
         return new Response(JSON.stringify({ error: { message: "Invalid Credentials" } }), { status: 401 });
@@ -269,7 +273,7 @@ Deno.test("createGoogleCalendarActions marks reconnect when refresh fails", asyn
   const admin = createAdminStub({ account, token });
 
   const restore = stubFetch(async (url) => {
-    if (url.startsWith("https://www.googleapis.com/calendar/v3/calendars/primary/events")) {
+    if (url.startsWith(GOOGLE_EVENTS)) {
       return new Response(JSON.stringify({ error: { message: "Invalid Credentials" } }), { status: 401 });
     }
     if (url.includes("oauth2.googleapis.com/token")) {

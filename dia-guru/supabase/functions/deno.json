@@ -9,6 +9,7 @@
     "calendar-list": { "verify_jwt": true },
     "sync-captures": { "verify_jwt": true },
     "parse-task": { "verify_jwt": true },
-    "test-deepseek": { "verify_jwt": false }
+    "test-deepseek": { "verify_jwt": false },
+    "reset-test-data": { "verify_jwt": false }
   }
 }
