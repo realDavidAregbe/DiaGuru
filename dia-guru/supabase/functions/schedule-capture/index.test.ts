@@ -224,7 +224,7 @@ Deno.test("schedule-capture handler (live request)", async () => {
   const offsetRaw = Deno.env.get("TEST_TZ_OFFSET_MINUTES");
   const timezoneOffsetMinutes = offsetRaw ? Number(offsetRaw) : undefined;
   console.log("Using timezone:", timezone, "offset minutes:", timezoneOffsetMinutes);
-  const captureId = "1bc04012-217f-478e-9ac7-d295867584c8";
+  const captureId = "0dd868f0-f8ea-4953-9e10-96e25d0dd7e6";
   const req = new Request("http://localhost/functions/v1/schedule-capture", {
     method: "POST",
     headers: {

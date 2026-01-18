@@ -12,8 +12,8 @@ import {
     type PreemptionDisplacement,
 } from "./scheduler-config.ts";
 
-export const BUFFER_MINUTES = 30;
-export const COMPRESSED_BUFFER_MINUTES = 15;
+export const BUFFER_MINUTES = 15;
+export const COMPRESSED_BUFFER_MINUTES = 5;
 export const SEARCH_DAYS = 7;
 export const DAY_END_HOUR = 22;
 export const SLOT_INCREMENT_MINUTES = 15;
@@ -1093,7 +1093,8 @@ export function computeSchedulingPlan(
             const fitsWindow = end.getTime() <= windowEnd.getTime();
             return {
                 mode: "window",
-                preferredSlot: fitsWindow ? { start, end } : null,
+                preferredSlot: null,
+                //preferredSlot: fitsWindow ? { start, end } : null,
                 deadline: null,
                 window: { start: windowStart, end: windowEnd },
             };
@@ -1339,6 +1340,16 @@ export function isSlotWithinConstraints(capture: CaptureEntryRow, slot: { start:
     if (capture.constraint_type === "deadline_time") pushIfValid(capture.constraint_time);
     if (candidates.length === 0) return true;
     const minEnd = new Date(Math.min(...candidates.map((d) => d.getTime())));
+    
+    if (capture.constraint_type === "start_time") {
+        if(capture.window_start){
+            const window_start = new Date(capture.window_start);
+            const window_end = new Date(capture.window_end);
+            if(!Number.isNaN(window_start.getTime()) && !Number.isNaN(window_end.getTime())){
+                return window_start <= slot.start && slot.start <= window_end;
+            }
+        }
+    }
     return slot.end.getTime() <= minEnd.getTime();
 }
 

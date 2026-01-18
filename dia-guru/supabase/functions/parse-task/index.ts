@@ -57,7 +57,7 @@ type DiaGuruTaskExtraction = {
   deadline: {
     datetime: string | null;
     kind: "hard" | "soft" | null;
-    source: "explicit" | "inferred" | "inferred_working_hours" | "inferred_sleep" | null;
+    source: "explicit" | "inferred" | null;
   } | null;
   scheduled_time: { datetime: string | null; precision: "exact" | "approximate" | null; source: "explicit" | "inferred" | null } | null;
   execution_window: {
@@ -92,6 +92,12 @@ type DiaGuruTaskExtraction = {
   missing: string[];
   clarifying_question: string | null;
   notes: string[];
+  policy?: {
+    applied: boolean;
+    kind: "before_sleep";
+    variant: "working_hours" | "sleep_fallback";
+    chosen_local_time: string;
+  } | null;
 };
 
 // Fields we recommend to persist onto capture_entries
@@ -770,7 +776,7 @@ function buildExtractionPrompts(input: { content: string; timezone: string; refe
     "deadline": {
       "datetime": string | null,
       "kind": "hard" | "soft" | null,
-      "source": "explicit" | "inferred" | "inferred_working_hours" | "inferred_sleep" | null
+      "source": "explicit" | "inferred" | null
     } | null,
   "scheduled_time": {
     "datetime": string | null,
@@ -851,10 +857,7 @@ export function normalizeExtraction(obj: any): DiaGuruTaskExtraction | null {
     ? {
       datetime: s(obj.deadline.datetime),
       kind: one(obj.deadline.kind, ["hard", "soft"] as const),
-      source: one(
-        obj.deadline.source,
-        ["explicit", "inferred", "inferred_working_hours", "inferred_sleep"] as const,
-      ),
+      source: one(obj.deadline.source, ["explicit", "inferred"] as const),
     }
     : null;
   const scheduled_time = obj.scheduled_time && typeof obj.scheduled_time === "object"
@@ -918,7 +921,22 @@ export function normalizeExtraction(obj: any): DiaGuruTaskExtraction | null {
     missing: Array.isArray(obj.missing) ? obj.missing.map(String) : [],
     clarifying_question: obj.clarifying_question == null ? null : String(obj.clarifying_question),
     notes: Array.isArray(obj.notes) ? obj.notes.map(String) : [],
+    policy: normalizePolicy(obj.policy),
   };
+}
+
+function normalizePolicy(value: unknown): DiaGuruTaskExtraction["policy"] {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const applied = typeof record.applied === "boolean" ? record.applied : Boolean(record.applied);
+  const kind = record.kind === "before_sleep" ? "before_sleep" : null;
+  const variant =
+    record.variant === "working_hours" || record.variant === "sleep_fallback"
+      ? record.variant
+      : null;
+  const chosen = typeof record.chosen_local_time === "string" ? record.chosen_local_time : null;
+  if (!kind || !variant || !chosen) return null;
+  return { applied, kind, variant, chosen_local_time: chosen };
 }
 
 export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
@@ -1077,7 +1095,7 @@ function applyRoutineNormalization(args: {
   }
 
   if (/\bbefore (i )?sleep\b/i.test(content)) {
-    applyBeforeSleepDeadline(extraction, timezone, referenceNow, { enforceWorkingWindow: true });
+    applyBeforeSleepDeadline(extraction, timezone, referenceNow);
   }
 }
 
@@ -1194,30 +1212,25 @@ function normalizeMealExtraction(
   }
 }
 
-function applyBeforeSleepDeadline(
-  extraction: DiaGuruTaskExtraction,
-  timezone: string,
-  referenceNow: Date,
-  options?: { enforceWorkingWindow?: boolean },
-) {
-  const enforceWorkingWindow = options?.enforceWorkingWindow ?? true;
+function applyBeforeSleepDeadline(extraction: DiaGuruTaskExtraction, timezone: string, referenceNow: Date) {
   const hasDeadline = Boolean(extraction.deadline?.datetime);
   const hasWindow = Boolean(extraction.execution_window);
   let appliedDeadline: string | null = null;
-  let appliedSource: "inferred_working_hours" | "inferred_sleep" | null = null;
 
   if (!hasDeadline) {
-    const fallbackTime = enforceWorkingWindow
-      ? { hour: 22, minute: 0, source: "inferred_working_hours" as const }
-      : resolveSleepDefaultTime();
     appliedDeadline = buildZonedDateTime({
       timezone,
       reference: referenceNow,
-      hour: fallbackTime.hour,
-      minute: fallbackTime.minute,
+      hour: 22,
+      minute: 0,
     });
-    appliedSource = fallbackTime.source;
-    extraction.deadline = { datetime: appliedDeadline, kind: "soft", source: appliedSource };
+    extraction.deadline = { datetime: appliedDeadline, kind: "soft", source: "inferred" };
+    extraction.policy = {
+      applied: true,
+      kind: "before_sleep",
+      variant: "working_hours",
+      chosen_local_time: "22:00",
+    };
   }
 
   const windowEnd = extraction.deadline?.datetime ?? appliedDeadline;
@@ -1229,24 +1242,6 @@ function applyBeforeSleepDeadline(
       source: "default",
     };
   }
-
-  if (appliedSource) {
-    extraction.notes = extraction.notes ?? [];
-    extraction.notes.push("before_sleep_policy_applied=true");
-  }
-}
-
-function resolveSleepDefaultTime() {
-  const raw = Deno.env.get("SLEEP_DEADLINE_LOCAL_TIME") ?? "23:30";
-  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(raw.trim());
-  if (!match) {
-    return { hour: 23, minute: 30, source: "inferred_sleep" as const };
-  }
-  return {
-    hour: Number(match[1]),
-    minute: Number(match[2]),
-    source: "inferred_sleep" as const,
-  };
 }
 
 function hasExplicitWindow(extraction: DiaGuruTaskExtraction) {
