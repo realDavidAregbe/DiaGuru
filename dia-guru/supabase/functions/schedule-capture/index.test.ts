@@ -1,6 +1,5 @@
 import type { CaptureEntryRow } from "../types.ts";
 
-
 import {
   collectConflictingEvents,
   computeSchedulingPlan,
@@ -16,8 +15,9 @@ import { mapExtractionToCapture } from "../parse-task/index.ts";
 
 // or the equivalent for Jest/Vitest
 
-
-function makeCapture(overrides: Partial<CaptureEntryRow> = {}): CaptureEntryRow {
+function makeCapture(
+  overrides: Partial<CaptureEntryRow> = {},
+): CaptureEntryRow {
   const base: CaptureEntryRow = {
     id: "cap_1",
     user_id: "user_1",
@@ -68,8 +68,6 @@ function makeCapture(overrides: Partial<CaptureEntryRow> = {}): CaptureEntryRow 
   return { ...base, ...overrides } as CaptureEntryRow;
 }
 
-
-
 function makeEvent(
   startIso: string,
   endIso: string,
@@ -105,7 +103,6 @@ function maskSecret(value: string) {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
-
 // Deno.test("collectConflictingEvents relaxes buffer for in-progress events", () => {
 //   const now = new Date("2025-01-01T10:30:00Z");
 //   const event = makeEvent("2025-01-01T10:00:00Z", "2025-01-01T11:00:00Z");
@@ -117,7 +114,6 @@ function maskSecret(value: string) {
 //   assertEquals(conflicts.length, 0);
 // });
 
-
 // Deno.test("collectConflictingEvents still blocks overlapping slots during event", () => {
 //   const now = new Date("2025-01-01T10:30:00Z");
 //   const event = makeEvent("2025-01-01T10:00:00Z", "2025-01-01T11:00:00Z");
@@ -128,7 +124,6 @@ function maskSecret(value: string) {
 //   assertEquals(conflicts.length, 1);
 //   assertEquals(conflicts[0].id, event.id);
 // });
-
 
 // Deno.test("computeSchedulingPlan: deadline_time builds a deadline plan", () => {
 //   const capture = makeCapture({
@@ -157,7 +152,6 @@ function maskSecret(value: string) {
 //   assertEquals(plan.preferredSlot!.start.toISOString(), "2025-01-01T10:00:00.000Z");
 // });
 
-
 // // Deno.test("findNextAvailableSlot respects busy intervals and working window", () => {
 // //   const now = new Date("2025-01-01T09:00:00Z");
 // //   const events = [
@@ -176,8 +170,8 @@ Deno.test("schedule-capture handler (live request)", async () => {
   const runLive = (Deno.env.get("RUN_LIVE_SCHEDULE_CAPTURE_TEST") ?? "").trim();
   if (runLive !== "1") return;
 
-
-  const userBearer = Deno.env.get("TEST_USER_BEARER") ?? Deno.env.get("USER_BEARER");
+  const userBearer =
+    Deno.env.get("TEST_USER_BEARER") ?? Deno.env.get("USER_BEARER");
   assert(userBearer, "Missing env TEST_USER_BEARER");
 
   const supabaseUrl =
@@ -195,7 +189,8 @@ Deno.test("schedule-capture handler (live request)", async () => {
   }
 
   const googleClientId =
-    Deno.env.get("GOOGLE_CLIENT_ID") ?? Deno.env.get("EXPO_PUBLIC_GOOGLE_CLIENT_ID");
+    Deno.env.get("GOOGLE_CLIENT_ID") ??
+    Deno.env.get("EXPO_PUBLIC_GOOGLE_CLIENT_ID");
   if (googleClientId && !Deno.env.get("GOOGLE_CLIENT_ID")) {
     Deno.env.set("GOOGLE_CLIENT_ID", googleClientId);
   }
@@ -205,7 +200,10 @@ Deno.test("schedule-capture handler (live request)", async () => {
   const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY");
   assert(serviceRoleKey, "Missing env SERVICE_ROLE_KEY");
   assert(googleClientId, "Missing env GOOGLE_CLIENT_ID");
-  assert(Deno.env.get("GOOGLE_CLIENT_SECRET"), "Missing env GOOGLE_CLIENT_SECRET");
+  assert(
+    Deno.env.get("GOOGLE_CLIENT_SECRET"),
+    "Missing env GOOGLE_CLIENT_SECRET",
+  );
 
   const serviceRolePayload = decodeJwtPayload(serviceRoleKey);
   console.log("Supabase URL:", supabaseUrl);
@@ -223,7 +221,12 @@ Deno.test("schedule-capture handler (live request)", async () => {
   const timezone = Deno.env.get("TEST_TIMEZONE") ?? null;
   const offsetRaw = Deno.env.get("TEST_TZ_OFFSET_MINUTES");
   const timezoneOffsetMinutes = offsetRaw ? Number(offsetRaw) : undefined;
-  console.log("Using timezone:", timezone, "offset minutes:", timezoneOffsetMinutes);
+  console.log(
+    "Using timezone:",
+    timezone,
+    "offset minutes:",
+    timezoneOffsetMinutes,
+  );
   const captureId = "0dd868f0-f8ea-4953-9e10-96e25d0dd7e6";
   const req = new Request("http://localhost/functions/v1/schedule-capture", {
     method: "POST",
@@ -244,31 +247,54 @@ Deno.test("schedule-capture handler (live request)", async () => {
   const res = await handler(req);
   const data = await res.json().catch(() => ({}));
   console.log("Response data:", data);
-  assert(res.ok || res.status === 409, `Unexpected status ${res.status}: ${JSON.stringify(data)}`);
+  assert(
+    res.ok || res.status === 409,
+    `Unexpected status ${res.status}: ${JSON.stringify(data)}`,
+  );
   assert(data && (data.message || data.decision || data.error));
 });
 
-
 // --- Mapping tests ---
 
-Deno.test("mapExtractionToCapture: explicit scheduled_time wins over window/deadline", () => {
-  const extraction = {
-    scheduled_time: { datetime: "2026-01-09T15:00:00Z", precision: "exact", source: "explicit" },
-    deadline: { datetime: "2026-01-09T18:00:00Z", kind: "hard", source: "explicit" },
-    execution_window: { relation: "between", start: "2026-01-09T14:00:00Z", end: "2026-01-09T17:00:00Z", source: "explicit" },
-    estimated_minutes: 30,
-  } as any;
-  const mapped = mapExtractionToCapture(extraction);
-  assertEquals(mapped.constraint_type, "start_time");
-  assertEquals(mapped.constraint_time, "2026-01-09T15:00:00Z");
-  assertEquals(mapped.deadline_at, "2026-01-09T18:00:00Z");
-  assertEquals(mapped.window_start, "2026-01-09T14:00:00Z");
-  assertEquals(mapped.window_end, "2026-01-09T17:00:00Z");
-});
+Deno.test(
+  "mapExtractionToCapture: explicit scheduled_time wins over window/deadline",
+  () => {
+    const extraction = {
+      scheduled_time: {
+        datetime: "2026-01-09T15:00:00Z",
+        precision: "exact",
+        source: "explicit",
+      },
+      deadline: {
+        datetime: "2026-01-09T18:00:00Z",
+        kind: "hard",
+        source: "explicit",
+      },
+      execution_window: {
+        relation: "between",
+        start: "2026-01-09T14:00:00Z",
+        end: "2026-01-09T17:00:00Z",
+        source: "explicit",
+      },
+      estimated_minutes: 30,
+    } as any;
+    const mapped = mapExtractionToCapture(extraction);
+    assertEquals(mapped.constraint_type, "start_time");
+    assertEquals(mapped.constraint_time, "2026-01-09T15:00:00Z");
+    assertEquals(mapped.deadline_at, "2026-01-09T18:00:00Z");
+    assertEquals(mapped.window_start, "2026-01-09T14:00:00Z");
+    assertEquals(mapped.window_end, "2026-01-09T17:00:00Z");
+  },
+);
 
 Deno.test("mapExtractionToCapture: window only maps to window", () => {
   const extraction = {
-    execution_window: { relation: "between", start: "2026-01-10T10:00:00Z", end: "2026-01-10T12:00:00Z", source: "explicit" },
+    execution_window: {
+      relation: "between",
+      start: "2026-01-10T10:00:00Z",
+      end: "2026-01-10T12:00:00Z",
+      source: "explicit",
+    },
     estimated_minutes: 60,
   } as any;
   const mapped = mapExtractionToCapture(extraction);
@@ -277,46 +303,77 @@ Deno.test("mapExtractionToCapture: window only maps to window", () => {
   assertEquals(mapped.window_end, "2026-01-10T12:00:00Z");
 });
 
-Deno.test("mapExtractionToCapture: approximate scheduled_time marks soft start", () => {
-  const extraction = {
-    scheduled_time: { datetime: "2026-01-11T09:00:00Z", precision: "approximate", source: "inferred" },
-    estimated_minutes: 30,
-  } as any;
-  const mapped = mapExtractionToCapture(extraction);
-  assertEquals(mapped.constraint_type, "start_time");
-  assert(mapped.is_soft_start);
-});
+Deno.test(
+  "mapExtractionToCapture: approximate scheduled_time marks soft start",
+  () => {
+    const extraction = {
+      scheduled_time: {
+        datetime: "2026-01-11T09:00:00Z",
+        precision: "approximate",
+        source: "inferred",
+      },
+      estimated_minutes: 30,
+    } as any;
+    const mapped = mapExtractionToCapture(extraction);
+    assertEquals(mapped.constraint_type, "start_time");
+    assert(mapped.is_soft_start);
+  },
+);
 
 // --- Plan tests ---
 
-Deno.test("computeSchedulingPlan: start_time produces start mode with preferredSlot at or after now", () => {
-  const capture = makeCapture({
-    constraint_type: "start_time",
-    constraint_time: "2026-02-01T10:00:00Z",
-  });
-  const plan = computeSchedulingPlan(capture, 60, 0, new Date("2026-02-01T09:00:00Z"));
-  assertEquals(plan.mode, "start");
-  assert(plan.preferredSlot);
-  assertEquals(plan.preferredSlot!.start.toISOString(), "2026-02-01T10:00:00.000Z");
-});
+Deno.test(
+  "computeSchedulingPlan: start_time produces start mode with preferredSlot at or after now",
+  () => {
+    const capture = makeCapture({
+      constraint_type: "start_time",
+      constraint_time: "2026-02-01T10:00:00Z",
+    });
+    const plan = computeSchedulingPlan(
+      capture,
+      60,
+      0,
+      new Date("2026-02-01T09:00:00Z"),
+    );
+    assertEquals(plan.mode, "start");
+    assert(plan.preferredSlot);
+    assertEquals(
+      plan.preferredSlot!.start.toISOString(),
+      "2026-02-01T10:00:00.000Z",
+    );
+  },
+);
 
-Deno.test("computeSchedulingPlan: window that cannot fit returns window mode with null preferredSlot", () => {
-  const capture = makeCapture({
-    constraint_type: "window",
-    constraint_time: "2026-02-02T10:00:00Z",
-    constraint_end: "2026-02-02T10:30:00Z", // 30-min window but task is 60
-  });
-  const plan = computeSchedulingPlan(capture, 60, 0, new Date("2026-02-02T08:00:00Z"));
-  assertEquals(plan.mode, "window");
-  assertEquals(plan.preferredSlot, null);
-});
+Deno.test(
+  "computeSchedulingPlan: window that cannot fit returns window mode with null preferredSlot",
+  () => {
+    const capture = makeCapture({
+      constraint_type: "window",
+      constraint_time: "2026-02-02T10:00:00Z",
+      constraint_end: "2026-02-02T10:30:00Z", // 30-min window but task is 60
+    });
+    const plan = computeSchedulingPlan(
+      capture,
+      60,
+      0,
+      new Date("2026-02-02T08:00:00Z"),
+    );
+    assertEquals(plan.mode, "window");
+    assertEquals(plan.preferredSlot, null);
+  },
+);
 
 Deno.test("computeSchedulingPlan: deadline_time builds a deadline plan", () => {
   const capture = makeCapture({
     constraint_type: "deadline_time",
     constraint_time: "2026-02-03T18:00:00Z",
   });
-  const plan = computeSchedulingPlan(capture, 30, 0, new Date("2026-02-03T09:00:00Z"));
+  const plan = computeSchedulingPlan(
+    capture,
+    30,
+    0,
+    new Date("2026-02-03T09:00:00Z"),
+  );
   assertEquals(plan.mode, "deadline");
   assert(plan.deadline);
   assertEquals(plan.deadline!.toISOString(), "2026-02-03T18:00:00.000Z");

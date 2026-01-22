@@ -1,4 +1,5 @@
 <!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
+
 <a id="readme-top"></a>
 
 [![Contributors][contributors-shield]][contributors-url]
@@ -13,9 +14,9 @@
   <p align="center">
     Intelligent daily planner that captures what is on your mind, parses the intent, and arranges your Google Calendar automatically.
     <br />
-    <a href="https://github.com/realjbgunner24/DiaGuru/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
+    <a href="https://github.com/realDavidAregbe/DiaGuru/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
     &middot;
-    <a href="https://github.com/realjbgunner24/DiaGuru/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
+    <a href="https://github.com/realDavidAregbe/DiaGuru/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
   </p>
 </div>
 
@@ -65,13 +66,13 @@ Core capabilities today:
 
 ### Built With
 
-* [![Expo][expo-shield]][expo-url]
-* [![React Native][react-native-shield]][react-native-url]
-* [![TypeScript][typescript-shield]][typescript-url]
-* [![Supabase][supabase-shield]][supabase-url]
-* [![Deno][deno-shield]][deno-url]
-* [![Fly.io][fly-shield]][fly-url]
-* [![Duckling][duckling-shield]][duckling-url]
+- [![Expo][expo-shield]][expo-url]
+- [![React Native][react-native-shield]][react-native-url]
+- [![TypeScript][typescript-shield]][typescript-url]
+- [![Supabase][supabase-shield]][supabase-url]
+- [![Deno][deno-shield]][deno-url]
+- [![Fly.io][fly-shield]][fly-url]
+- [![Duckling][duckling-shield]][duckling-url]
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -91,11 +92,11 @@ Follow these steps to run DiaGuru locally and deploy supporting services.
 
 1. Clone the repository
    ```bash
-   git clone https://github.com/realjbgunner24/DiaGuru.git
+   git clone https://github.com/realDavidAregbe/DiaGuru.git
    cd DiaGuru
    npm install
    ```
-2. (Optional) Launch Duckling locally  
+2. (Optional) Launch Duckling locally
    ```bash
    docker run --rm -p 8000:8000 rasa/duckling
    ```
@@ -105,35 +106,38 @@ Follow these steps to run DiaGuru locally and deploy supporting services.
 
 Copy `.env.example` to `.env` and provide the values listed below. Expo loads this file automatically.
 
-| Variable | Description |
-| --- | --- |
-| `EXPO_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key |
-| `EXPO_PUBLIC_GOOGLE_CLIENT_ID` | Web OAuth client for Google Calendar |
+| Variable                          | Description                                      |
+| --------------------------------- | ------------------------------------------------ |
+| `EXPO_PUBLIC_SUPABASE_URL`        | Supabase project URL                             |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY`   | Supabase anon/public key                         |
+| `EXPO_PUBLIC_GOOGLE_CLIENT_ID`    | Web OAuth client for Google Calendar             |
 | `EXPO_PUBLIC_GOOGLE_REDIRECT_URI` | URL of the deployed OAuth callback Edge Function |
 
 Edge Function secrets (set via `supabase secrets set`):
 
-| Variable | Description |
-| --- | --- |
-| `SERVICE_ROLE_KEY` | Allows secure access to token tables |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Match the Expo app credentials |
-| `GOOGLE_REDIRECT_URI` | Same as the public redirect URI above |
-| `DUCKLING_URL` | `https://dia-guru.fly.dev/parse` (or your local container) |
-| `LOCALE` / `TZ` | Defaults `en_US` / `America/Chicago` |
-| `WORK_END` | Latest preferred finish time (e.g., `17:30`) |
-| `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | Optional DeepSeek config for conversational parsing |
+| Variable                                    | Description                                                |
+| ------------------------------------------- | ---------------------------------------------------------- |
+| `SERVICE_ROLE_KEY`                          | Allows secure access to token tables                       |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Match the Expo app credentials                             |
+| `GOOGLE_REDIRECT_URI`                       | Same as the public redirect URI above                      |
+| `DUCKLING_URL`                              | `https://dia-guru.fly.dev/parse` (or your local container) |
+| `LOCALE` / `TZ`                             | Defaults `en_US` / `America/Chicago`                       |
+| `WORK_END`                                  | Latest preferred finish time (e.g., `17:30`)               |
+| `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`  | Optional DeepSeek config for conversational parsing        |
 
 Deploy or update a function:
+
 ```bash
 supabase functions deploy parse-task
 supabase functions deploy schedule-run
 ```
 
 Run the mobile app:
+
 ```bash
 npx expo start
 ```
+
 Scan the QR code with Expo Go or start an emulator/simulator.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -178,7 +182,7 @@ npm run validate        # typecheck + Jest + Deno (CI default)
 - [ ] Personalized heuristics that learn from completion history.
 - [ ] Push notification cadence tuned to user preferences.
 
-See the [open issues](https://github.com/realjbgunner24/DiaGuru/issues) for the full backlog.
+See the [open issues](https://github.com/realDavidAregbe/DiaGuru/issues) for the full backlog.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -196,7 +200,7 @@ Distributed under a private license. Contact the maintainers for reuse permissio
 
 ## Contact
 
-Project Link: [https://github.com/realjbgunner24/DiaGuru](https://github.com/realjbgunner24/DiaGuru)
+Project Link: [https://github.com/realDavidAregbe/DiaGuru](https://github.com/realDavidAregbe/DiaGuru)
 
 Have questions? Open a discussion or ping us through the repo issues.
 
@@ -204,19 +208,20 @@ Have questions? Open a discussion or ping us through the repo issues.
 
 ## Acknowledgments
 
-* [Best README Template](https://github.com/othneildrew/Best-README-Template) for the structure.
-* [Rasa Duckling](https://github.com/facebook/duckling) for low-latency date parsing.
-* [Supabase](https://supabase.com) for auth, storage, and Edge Functions.
+- [Best README Template](https://github.com/othneildrew/Best-README-Template) for the structure.
+- [Rasa Duckling](https://github.com/facebook/duckling) for low-latency date parsing.
+- [Supabase](https://supabase.com) for auth, storage, and Edge Functions.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- MARKDOWN LINKS & IMAGES -->
-[contributors-shield]: https://img.shields.io/github/contributors/realjbgunner24/DiaGuru.svg?style=for-the-badge
-[contributors-url]: https://github.com/realjbgunner24/DiaGuru/graphs/contributors
-[issues-shield]: https://img.shields.io/github/issues/realjbgunner24/DiaGuru.svg?style=for-the-badge
-[issues-url]: https://github.com/realjbgunner24/DiaGuru/issues
+
+[contributors-shield]: https://img.shields.io/github/contributors/realDavidAregbe/DiaGuru.svg?style=for-the-badge
+[contributors-url]: https://github.com/realDavidAregbe/DiaGuru/graphs/contributors
+[issues-shield]: https://img.shields.io/github/issues/realDavidAregbe/DiaGuru.svg?style=for-the-badge
+[issues-url]: https://github.com/realDavidAregbe/DiaGuru/issues
 [license-shield]: https://img.shields.io/badge/license-Private-lightgrey?style=for-the-badge
-[license-url]: https://github.com/realjbgunner24/DiaGuru
+[license-url]: https://github.com/realDavidAregbe/DiaGuru
 [expo-shield]: https://img.shields.io/badge/Expo-1B1F23?style=for-the-badge&logo=expo&logoColor=fff
 [expo-url]: https://expo.dev
 [react-native-shield]: https://img.shields.io/badge/React%20Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB
