@@ -5,6 +5,7 @@
 [![Contributors][contributors-shield]][contributors-url]
 [![Issues][issues-shield]][issues-url]
 [![License][license-shield]][license-url]
+[![CI](https://github.com/realDavidAregbe/DiaGuru/actions/workflows/ci.yml/badge.svg)](https://github.com/realDavidAregbe/DiaGuru/actions/workflows/ci.yml)
 
 <!-- PROJECT LOGO -->
 <br />

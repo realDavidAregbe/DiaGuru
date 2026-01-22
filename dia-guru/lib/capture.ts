@@ -426,6 +426,22 @@ export type ScheduleDecision =
       };
     };
 
+export type SerializedChunk = {
+  start: string;
+  end: string;
+  late?: boolean;
+  overlapped?: boolean;
+  prime?: boolean;
+};
+
+export type ScheduleOverlap = {
+  minutes: number;
+  conflicts: string[];
+  day: string;
+  prime: boolean;
+  budget: { used: number; limit: number };
+};
+
 export type PlanActionSummary = {
   actionId: string;
   captureId: string;
@@ -441,6 +457,16 @@ export type PlanSummary = {
   id: string;
   createdAt: string;
   actions: PlanActionSummary[];
+};
+
+export type ScheduleCaptureResponse = {
+  capture: Capture | null;
+  message: string;
+  decision?: ScheduleDecision | null;
+  planSummary?: PlanSummary | null;
+  chunks?: SerializedChunk[];
+  overlap?: ScheduleOverlap | null;
+  explanation?: Record<string, unknown> | null;
 };
 
 export type ScheduleOptions = {
@@ -603,7 +629,7 @@ export async function invokeScheduleCapture(
   captureId: string,
   action: 'schedule' | 'reschedule' = 'schedule',
   options?: ScheduleOptions,
-) {
+) : Promise<ScheduleCaptureResponse> {
   const { data, error } = await supabase.functions.invoke('schedule-capture', {
     body: {
       captureId,
@@ -617,6 +643,9 @@ export async function invokeScheduleCapture(
     message: string;
     decision?: ScheduleDecision | null;
     planSummary?: PlanSummary | null;
+    chunks?: SerializedChunk[];
+    overlap?: ScheduleOverlap | null;
+    explanation?: Record<string, unknown> | null;
   };
   return {
     ...payload,
