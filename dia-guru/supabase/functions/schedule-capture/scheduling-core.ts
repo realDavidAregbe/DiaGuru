@@ -12,7 +12,7 @@ import {
     type PreemptionDisplacement,
 } from "./scheduler-config.ts";
 
-export const BUFFER_MINUTES = 15;
+export const BUFFER_MINUTES = 10;
 export const COMPRESSED_BUFFER_MINUTES = 5;
 export const SEARCH_DAYS = 7;
 export const DAY_END_HOUR = 22;
