@@ -60,14 +60,14 @@ function createAdminStub(initial: {
               eq() {
                 return query;
               },
-              single: async () => ({ data: state.account, error: null }),
-              maybeSingle: async () => ({ data: state.account, error: null }),
+              single: () => ({ data: state.account, error: null }),
+              maybeSingle: () => ({ data: state.account, error: null }),
             };
             return query;
           },
           update(values: Record<string, unknown>) {
             return {
-              eq: async () => {
+              eq: () => {
                 if (state.account) {
                   state.account = { ...state.account, ...values } as CalendarAccountRow;
                 } else {
@@ -93,12 +93,12 @@ function createAdminStub(initial: {
               eq() {
                 return query;
               },
-              single: async () => ({ data: state.token, error: null }),
-              maybeSingle: async () => ({ data: state.token, error: null }),
+              single: () => ({ data: state.token, error: null }),
+              maybeSingle: () => ({ data: state.token, error: null }),
             };
             return query;
           },
-          upsert: async (values: {
+          upsert: (values: {
             account_id: number;
             access_token: string;
             refresh_token: string | null;
@@ -127,7 +127,7 @@ function createAdminStub(initial: {
   };
 }
 
-function stubFetch(factory: (url: string, init?: RequestInit) => Promise<Response>) {
+function stubFetch(factory: (url: string, init?: RequestInit) => Response | Promise<Response>) {
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: Request | string | URL, init?: RequestInit) => {
     const url = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
@@ -154,7 +154,7 @@ Deno.test("resolveCalendarClient refreshes expiring access tokens", async () => 
 
   const admin = createAdminStub({ account, token });
 
-  const restore = stubFetch(async (url) => {
+  const restore = stubFetch((url) => {
     if (url.includes("oauth2.googleapis.com/token")) {
       return new Response(
         JSON.stringify({
@@ -191,7 +191,7 @@ Deno.test("resolveCalendarClient flags account when tokens missing", async () =>
   };
   const admin = createAdminStub({ account, token: null });
 
-  const restore = stubFetch(async () => {
+  const restore = stubFetch(() => {
     throw new Error("fetch should not be called");
   });
 
@@ -220,7 +220,7 @@ Deno.test("createGoogleCalendarActions retries once after 401 and refreshes toke
   const admin = createAdminStub({ account, token });
 
   let eventCalls = 0;
-  const restore = stubFetch(async (url) => {
+  const restore = stubFetch((url) => {
     if (url.startsWith(GOOGLE_EVENTS)) {
       eventCalls += 1;
       if (eventCalls === 1) {
@@ -272,7 +272,7 @@ Deno.test("createGoogleCalendarActions marks reconnect when refresh fails", asyn
   };
   const admin = createAdminStub({ account, token });
 
-  const restore = stubFetch(async (url) => {
+  const restore = stubFetch((url) => {
     if (url.startsWith(GOOGLE_EVENTS)) {
       return new Response(JSON.stringify({ error: { message: "Invalid Credentials" } }), { status: 401 });
     }
@@ -321,7 +321,7 @@ Deno.test("getCalendarHealth returns healthy when tokens are valid", async () =>
   };
   const admin = createAdminStub({ account, token });
 
-  const restore = stubFetch(async () => {
+  const restore = stubFetch(() => {
     throw new Error("fetch should not be invoked for valid tokens");
   });
 
@@ -357,7 +357,7 @@ Deno.test("getCalendarHealth signals reconnect when refresh fails", async () => 
   };
   const admin = createAdminStub({ account, token });
 
-  const restore = stubFetch(async (url) => {
+  const restore = stubFetch((url) => {
     if (url.includes("oauth2.googleapis.com/token")) {
       return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
     }

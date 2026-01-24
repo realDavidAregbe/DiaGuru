@@ -1,19 +1,11 @@
 import type { CaptureEntryRow } from "../types.ts";
-
-import {
-  collectConflictingEvents,
-  computeSchedulingPlan,
-  findNextAvailableSlot,
-  computeBusyIntervals,
-  parsePreferredSlot,
-  type CalendarEvent,
-  type PreferredSlot,
-} from "./scheduling-core.ts";
+import { computeSchedulingPlan } from "./scheduling-core.ts";
 import { handler } from "./index.ts";
 import { assert, assertEquals } from "std/assert"; // if you're on Deno
 import { mapExtractionToCapture } from "../parse-task/index.ts";
 
 // or the equivalent for Jest/Vitest
+type Extraction = Parameters<typeof mapExtractionToCapture>[0];
 
 function makeCapture(
   overrides: Partial<CaptureEntryRow> = {},
@@ -68,21 +60,23 @@ function makeCapture(
   return { ...base, ...overrides } as CaptureEntryRow;
 }
 
-function makeEvent(
-  startIso: string,
-  endIso: string,
-  extra: Partial<CalendarEvent> = {},
-): CalendarEvent {
+function makeExtraction(overrides: Partial<Extraction> = {}): Extraction {
   return {
-    id: extra.id ?? "evt_" + Math.random().toString(36).slice(2),
-    start: { dateTime: startIso },
-    end: { dateTime: endIso },
-    ...extra,
+    title: null,
+    estimated_minutes: null,
+    deadline: null,
+    scheduled_time: null,
+    execution_window: null,
+    time_preferences: null,
+    missing: [],
+    clarifying_question: null,
+    notes: [],
+    kind: null,
+    importance: null,
+    flexibility: null,
+    policy: null,
+    ...overrides,
   };
-}
-
-function slot(startIso: string, endIso: string): PreferredSlot {
-  return { start: new Date(startIso), end: new Date(endIso) };
 }
 
 function decodeJwtPayload(token: string) {
@@ -259,7 +253,7 @@ Deno.test("schedule-capture handler (live request)", async () => {
 Deno.test(
   "mapExtractionToCapture: explicit scheduled_time wins over window/deadline",
   () => {
-    const extraction = {
+    const extraction = makeExtraction({
       scheduled_time: {
         datetime: "2026-01-09T15:00:00Z",
         precision: "exact",
@@ -277,7 +271,7 @@ Deno.test(
         source: "explicit",
       },
       estimated_minutes: 30,
-    } as any;
+    });
     const mapped = mapExtractionToCapture(extraction);
     assertEquals(mapped.constraint_type, "start_time");
     assertEquals(mapped.constraint_time, "2026-01-09T15:00:00Z");
@@ -288,7 +282,7 @@ Deno.test(
 );
 
 Deno.test("mapExtractionToCapture: window only maps to window", () => {
-  const extraction = {
+  const extraction = makeExtraction({
     execution_window: {
       relation: "between",
       start: "2026-01-10T10:00:00Z",
@@ -296,7 +290,7 @@ Deno.test("mapExtractionToCapture: window only maps to window", () => {
       source: "explicit",
     },
     estimated_minutes: 60,
-  } as any;
+  });
   const mapped = mapExtractionToCapture(extraction);
   assertEquals(mapped.constraint_type, "window");
   assertEquals(mapped.window_start, "2026-01-10T10:00:00Z");
@@ -306,14 +300,14 @@ Deno.test("mapExtractionToCapture: window only maps to window", () => {
 Deno.test(
   "mapExtractionToCapture: approximate scheduled_time marks soft start",
   () => {
-    const extraction = {
+    const extraction = makeExtraction({
       scheduled_time: {
         datetime: "2026-01-11T09:00:00Z",
         precision: "approximate",
         source: "inferred",
       },
       estimated_minutes: 30,
-    } as any;
+    });
     const mapped = mapExtractionToCapture(extraction);
     assertEquals(mapped.constraint_type, "start_time");
     assert(mapped.is_soft_start);

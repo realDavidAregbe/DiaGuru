@@ -1,5 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   CaptureEntryRow,
   Database,
@@ -227,7 +226,9 @@ function mergeSchedulingNotes(existing: string | null | undefined, note: string)
         ...nextFields,
       });
     }
-  } catch {}
+  } catch {
+    // ignore malformed notes payload
+  }
   return JSON.stringify({
     previous_note: existing,
     ...nextFields,

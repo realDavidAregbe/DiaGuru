@@ -153,7 +153,7 @@ export async function handler(req: Request) {
         }),
       });
       const payload = await safeReadJson(res);
-      try { console.log("test-deepseek payload", { status: res.status, ok: res.ok, payload }); } catch {}
+      try { console.log("test-deepseek payload", { status: res.status, ok: res.ok, payload }); } catch { /* ignore logging errors */ }
       if (!res.ok) {
         const snippet = typeof payload === "string" ? payload.slice(0, 200) : JSON.stringify(payload).slice(0, 200);
         return json({ error: `DeepSeek responded ${res.status}: ${snippet}` }, 502);
@@ -203,9 +203,9 @@ export async function handler(req: Request) {
       if (!message) return json({ error: "DeepSeek returned an unexpected response (no message)." }, 502);
 
       const rawText = String(message);
-      try { console.log("test-deepseek raw_text", rawText); } catch {}
+      try { console.log("test-deepseek raw_text", rawText); } catch { /* ignore logging errors */ }
       let parsed: ExtractResponse["parsed"] | null = null;
-      let obj: any = null;
+      let obj: unknown = null;
       try {
         obj = JSON.parse(rawText);
       } catch (_) {
@@ -246,10 +246,10 @@ export async function handler(req: Request) {
               const strictRaw = extractFirstJsonObject(strictMsg) ?? strictMsg;
               try {
                 obj = JSON.parse(strictRaw);
-              } catch {}
+              } catch { /* ignore parse errors */ }
             }
           }
-        } catch {}
+        } catch { /* ignore parse errors */ }
       }
       if (!obj) return json({ error: "DeepSeek did not return valid JSON", raw_text: rawText }, 502);
       parsed = normalizeExtraction(obj);
@@ -474,44 +474,52 @@ function buildExtractionPrompts(input: { content: string; timezone: string }) {
   return { systemPrompt, userPrompt };
 }
 
-function normalizeExtraction(obj: any): ExtractResponse["parsed"] | null {
+function normalizeExtraction(obj: unknown): ExtractResponse["parsed"] | null {
   if (!obj || typeof obj !== "object") return null;
-
-  const normStr = (v: any): string | null => (typeof v === "string" ? v : null);
-  const normNum = (v: any): number | null => {
-    const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
-    return Number.isFinite(n) ? n : null;
+  const record = obj as Record<string, unknown>;
+  const asRecord = (value: unknown): Record<string, unknown> | null =>
+    value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+  const normStr = (value: unknown): string | null => (typeof value === "string" ? value : null);
+  const normNum = (value: unknown): number | null => {
+    const num = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+    return Number.isFinite(num) ? num : null;
   };
-  const oneOf = <T extends string>(v: any, values: readonly T[]): T | null =>
-    typeof v === "string" && (values as readonly string[]).includes(v) ? (v as T) : null;
+  const oneOf = <T extends string>(value: unknown, values: readonly T[]): T | null =>
+    typeof value === "string" && (values as readonly string[]).includes(value) ? (value as T) : null;
+  const oneNum = <T extends number>(value: unknown, values: readonly T[]): T | null => {
+    const num = normNum(value);
+    return num !== null && (values as readonly number[]).includes(num) ? (num as T) : null;
+  };
 
-  // deadline
+  const deadlineRecord = asRecord(record.deadline);
   let deadline: DiaGuruTaskExtraction["deadline"] = null;
-  if (obj.deadline && typeof obj.deadline === "object") {
+  if (deadlineRecord) {
     deadline = {
-      datetime: normStr(obj.deadline.datetime),
-      kind: oneOf(obj.deadline.kind, ["hard", "soft"] as const),
-      source: oneOf(obj.deadline.source, ["explicit", "inferred"] as const),
+      datetime: normStr(deadlineRecord.datetime),
+      kind: oneOf(deadlineRecord.kind, ["hard", "soft"] as const),
+      source: oneOf(deadlineRecord.source, ["explicit", "inferred"] as const),
     };
     if (!deadline.datetime && !deadline.kind && !deadline.source) deadline = null;
   }
 
-  // scheduled_time
+  const scheduledRecord = asRecord(record.scheduled_time);
   let scheduled_time: DiaGuruTaskExtraction["scheduled_time"] = null;
-  if (obj.scheduled_time && typeof obj.scheduled_time === "object") {
+  if (scheduledRecord) {
     scheduled_time = {
-      datetime: normStr(obj.scheduled_time.datetime),
-      precision: oneOf(obj.scheduled_time.precision, ["exact", "approximate"] as const),
-      source: oneOf(obj.scheduled_time.source, ["explicit", "inferred"] as const),
+      datetime: normStr(scheduledRecord.datetime),
+      precision: oneOf(scheduledRecord.precision, ["exact", "approximate"] as const),
+      source: oneOf(scheduledRecord.source, ["explicit", "inferred"] as const),
     };
-    if (!scheduled_time.datetime && !scheduled_time.precision && !scheduled_time.source) scheduled_time = null;
+    if (!scheduled_time.datetime && !scheduled_time.precision && !scheduled_time.source) {
+      scheduled_time = null;
+    }
   }
 
-  // execution_window
+  const windowRecord = asRecord(record.execution_window);
   let execution_window: DiaGuruTaskExtraction["execution_window"] = null;
-  if (obj.execution_window && typeof obj.execution_window === "object") {
+  if (windowRecord) {
     execution_window = {
-      relation: oneOf(obj.execution_window.relation, [
+      relation: oneOf(windowRecord.relation, [
         "before_deadline",
         "after_deadline",
         "around_scheduled",
@@ -519,9 +527,9 @@ function normalizeExtraction(obj: any): ExtractResponse["parsed"] | null {
         "on_day",
         "anytime",
       ] as const),
-      start: obj.execution_window.start === null ? null : normStr(obj.execution_window.start),
-      end: obj.execution_window.end === null ? null : normStr(obj.execution_window.end),
-      source: oneOf(obj.execution_window.source, ["explicit", "inferred", "default"] as const),
+      start: windowRecord.start === null ? null : normStr(windowRecord.start),
+      end: windowRecord.end === null ? null : normStr(windowRecord.end),
+      source: oneOf(windowRecord.source, ["explicit", "inferred", "default"] as const),
     };
     if (
       execution_window.relation === null &&
@@ -533,57 +541,50 @@ function normalizeExtraction(obj: any): ExtractResponse["parsed"] | null {
     }
   }
 
-  // time_preferences
+  const prefRecord = asRecord(record.time_preferences);
   let time_preferences: DiaGuruTaskExtraction["time_preferences"] = null;
-  if (obj.time_preferences && typeof obj.time_preferences === "object") {
+  if (prefRecord) {
     time_preferences = {
-      time_of_day: oneOf(obj.time_preferences.time_of_day, [
-        "morning",
-        "afternoon",
-        "evening",
-        "night",
-      ] as const),
-      day: oneOf(obj.time_preferences.day, ["today", "tomorrow", "specific_date", "any"] as const),
+      time_of_day: oneOf(prefRecord.time_of_day, ["morning", "afternoon", "evening", "night"] as const),
+      day: oneOf(prefRecord.day, ["today", "tomorrow", "specific_date", "any"] as const),
     };
     if (!time_preferences.time_of_day && !time_preferences.day) time_preferences = null;
   }
 
   const title = (() => {
-    const v = normStr(obj.title);
-    if (!v) return null;
-    const t = v.trim();
-    return t.length ? t : null;
+    const value = normStr(record.title);
+    if (!value) return null;
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
   })();
 
-  const estimated_minutes = normNum(obj.estimated_minutes);
-  const missing = Array.isArray(obj.missing) ? obj.missing.map((x: any) => String(x)) : [];
-  const clarifying_question = obj.clarifying_question == null ? null : String(obj.clarifying_question);
-  const notes = Array.isArray(obj.notes) ? obj.notes.map((x: any) => String(x)) : [];
+  const estimated_minutes = normNum(record.estimated_minutes);
+  const missing = Array.isArray(record.missing) ? record.missing.map(String) : [];
+  const clarifying_question = record.clarifying_question == null ? null : String(record.clarifying_question);
+  const notes = Array.isArray(record.notes) ? record.notes.map(String) : [];
 
+  const importanceRecord = asRecord(record.importance);
   let importance: DiaGuruTaskExtraction["importance"] = null;
-  if (obj.importance && typeof obj.importance === "object") {
-    const rec = obj.importance as Record<string, unknown>;
-    const urg = normNum(rec.urgency);
-    const imp = normNum(rec.impact);
-    const pen = normNum(rec.reschedule_penalty);
+  if (importanceRecord) {
     importance = {
-      urgency: (urg as any) ?? null,
-      impact: (imp as any) ?? null,
-      reschedule_penalty: (pen as any) ?? null,
-      blocking: Boolean(rec.blocking),
-      rationale: typeof rec.rationale === "string" ? rec.rationale : "",
-    } as any;
+      urgency: oneNum(importanceRecord.urgency, [1, 2, 3, 4, 5] as const),
+      impact: oneNum(importanceRecord.impact, [1, 2, 3, 4, 5] as const),
+      reschedule_penalty: oneNum(importanceRecord.reschedule_penalty, [0, 1, 2, 3] as const),
+      blocking: Boolean(importanceRecord.blocking),
+      rationale: typeof importanceRecord.rationale === "string" ? importanceRecord.rationale : "",
+    };
   }
 
+  const flexibilityRecord = asRecord(record.flexibility);
   let flexibility: DiaGuruTaskExtraction["flexibility"] = null;
-  if (obj.flexibility && typeof obj.flexibility === "object") {
-    const rec = obj.flexibility as Record<string, unknown>;
+  if (flexibilityRecord) {
     flexibility = {
-      cannot_overlap: Boolean(rec.cannot_overlap),
-      start_flexibility: oneOf(rec.start_flexibility, ["hard", "soft", "anytime"] as const) ?? "soft",
-      duration_flexibility: oneOf(rec.duration_flexibility, ["fixed", "split_allowed"] as const) ?? "fixed",
-      min_chunk_minutes: normNum(rec.min_chunk_minutes),
-      max_splits: normNum(rec.max_splits),
+      cannot_overlap: Boolean(flexibilityRecord.cannot_overlap),
+      start_flexibility: oneOf(flexibilityRecord.start_flexibility, ["hard", "soft", "anytime"] as const) ?? "soft",
+      duration_flexibility:
+        oneOf(flexibilityRecord.duration_flexibility, ["fixed", "split_allowed"] as const) ?? "fixed",
+      min_chunk_minutes: normNum(flexibilityRecord.min_chunk_minutes),
+      max_splits: normNum(flexibilityRecord.max_splits),
     };
   }
 
@@ -596,7 +597,7 @@ function normalizeExtraction(obj: any): ExtractResponse["parsed"] | null {
     time_preferences,
     importance,
     flexibility,
-    kind: typeof obj.kind === "string" ? (obj.kind as any) : null,
+    kind: oneOf(record.kind, ["task", "appointment", "call", "meeting", "study", "errand", "other"] as const),
     missing,
     clarifying_question,
     notes,

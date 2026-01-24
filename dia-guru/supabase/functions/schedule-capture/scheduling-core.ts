@@ -4,9 +4,6 @@ import type { CaptureEntryRow } from "../types.ts";
 import type { ChunkRecord } from "./chunks.ts";
 import {
     computePrioritySnapshot,
-    computeRigidityScore,
-    evaluatePreemptionNetGain,
-    logSchedulerEvent,
     schedulerConfig,
     type NetGainEvaluation,
     type PreemptionDisplacement,
@@ -1088,9 +1085,6 @@ export function computeSchedulingPlan(
         const windowStart = parseIsoDate(capture.constraint_time);
         const windowEnd = parseIsoDate(capture.constraint_end);
         if (windowStart && windowEnd && windowEnd.getTime() > windowStart.getTime()) {
-            const start = new Date(Math.max(windowStart.getTime(), referenceNow.getTime()));
-            const end = new Date(start.getTime() + durationMs);
-            const fitsWindow = end.getTime() <= windowEnd.getTime();
             return {
                 mode: "window",
                 preferredSlot: null,
@@ -1289,7 +1283,7 @@ function buildPriorityInput(capture: CaptureEntryRow): PriorityInput {
     if (typeof capture.reschedule_penalty === 'number') reschedule_penalty = capture.reschedule_penalty;
     if (urgency == null || impact == null || reschedule_penalty == null) {
         try {
-            const notes = typeof (capture as any).scheduling_notes === 'string' ? (capture as any).scheduling_notes : null;
+            const notes = typeof capture.scheduling_notes === "string" ? capture.scheduling_notes : null;
             if (notes && notes.trim().length > 0) {
                 const parsed = JSON.parse(notes);
                 if (parsed && typeof parsed === 'object') {
@@ -1302,7 +1296,9 @@ function buildPriorityInput(capture: CaptureEntryRow): PriorityInput {
                     }
                 }
             }
-        } catch { }
+        } catch {
+            // ignore malformed scheduling notes
+        }
     }
 
     return {
@@ -1506,15 +1502,24 @@ export function sanitizedEstimatedMinutes(capture: CaptureEntryRow) {
 }
 
 export function readCannotOverlapFromNotes(capture: CaptureEntryRow): boolean {
-    if (typeof (capture as any).cannot_overlap === 'boolean') return Boolean((capture as any).cannot_overlap);
+    if (typeof capture.cannot_overlap === "boolean") return Boolean(capture.cannot_overlap);
     try {
-        const raw = (capture as any).scheduling_notes as string | null | undefined;
-        if (!raw || typeof raw !== 'string') return false;
+        const raw = typeof capture.scheduling_notes === "string" ? capture.scheduling_notes : null;
+        if (!raw || typeof raw !== "string") return false;
         const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object' && parsed.flexibility && typeof parsed.flexibility === 'object') {
-            return Boolean((parsed.flexibility as any).cannot_overlap);
+        if (parsed && typeof parsed === "object") {
+            const record = parsed as Record<string, unknown>;
+            const flexibility = record.flexibility;
+            if (flexibility && typeof flexibility === "object") {
+                const flexRecord = flexibility as Record<string, unknown>;
+                if (typeof flexRecord.cannot_overlap === "boolean") {
+                    return flexRecord.cannot_overlap;
+                }
+            }
         }
-    } catch { }
+    } catch {
+        // ignore malformed scheduling notes
+    }
     return false;
 }
 
