@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { computePriorityScore, type PriorityInput } from "../../../shared/priority.ts";
 import type { CalendarTokenRow, CaptureEntryRow, Database } from "../types.ts";
 import { replaceCaptureChunks, type ChunkRecord } from "./chunks.ts";
@@ -791,8 +791,6 @@ export async function handler(req: Request) {
         let captureMap: Map<string, CaptureEntryRow> | null = null;
         let selectedConflicts: ConflictSummary[] = [];
         let canRebalance = false;
-        let preemptionEvaluation: NetGainEvaluation | null = null;
-
         if (
           plan.mode !== "flexible" &&
           slotWithinWindow &&
@@ -2789,20 +2787,24 @@ function buildPriorityInput(capture: CaptureEntryRow): PriorityInput {
   if (typeof capture.reschedule_penalty === 'number') reschedule_penalty = capture.reschedule_penalty;
   if (urgency == null || impact == null || reschedule_penalty == null) {
     try {
-      const notes = typeof (capture as any).scheduling_notes === 'string' ? (capture as any).scheduling_notes : null;
+      const notes = typeof capture.scheduling_notes === "string" ? capture.scheduling_notes : null;
       if (notes && notes.trim().length > 0) {
         const parsed = JSON.parse(notes);
-        if (parsed && typeof parsed === 'object') {
-          if (parsed.importance && typeof parsed.importance === 'object') {
-            const imp = parsed.importance as Record<string, unknown>;
-            const num = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : null);
+        if (parsed && typeof parsed === "object") {
+          const record = parsed as Record<string, unknown>;
+          if (record.importance && typeof record.importance === "object") {
+            const imp = record.importance as Record<string, unknown>;
+            const num = (v: unknown) =>
+              (typeof v === "number" ? v : typeof v === "string" ? Number(v) : null);
             if (urgency == null) urgency = num(imp.urgency);
             if (impact == null) impact = num(imp.impact);
             if (reschedule_penalty == null) reschedule_penalty = num(imp.reschedule_penalty);
           }
         }
       }
-    } catch { }
+    } catch {
+      // ignore malformed scheduling notes
+    }
   }
 
   return {
@@ -2996,15 +2998,24 @@ function sanitizedEstimatedMinutes(capture: CaptureEntryRow) {
 }
 
 function readCannotOverlapFromNotes(capture: CaptureEntryRow): boolean {
-  if (typeof (capture as any).cannot_overlap === 'boolean') return Boolean((capture as any).cannot_overlap);
+  if (typeof capture.cannot_overlap === "boolean") return Boolean(capture.cannot_overlap);
   try {
-    const raw = (capture as any).scheduling_notes as string | null | undefined;
-    if (!raw || typeof raw !== 'string') return false;
+    const raw = typeof capture.scheduling_notes === "string" ? capture.scheduling_notes : null;
+    if (!raw || typeof raw !== "string") return false;
     const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && parsed.flexibility && typeof parsed.flexibility === 'object') {
-      return Boolean((parsed.flexibility as any).cannot_overlap);
+    if (parsed && typeof parsed === "object") {
+      const record = parsed as Record<string, unknown>;
+      const flexibility = record.flexibility;
+      if (flexibility && typeof flexibility === "object") {
+        const flexRecord = flexibility as Record<string, unknown>;
+        if (typeof flexRecord.cannot_overlap === "boolean") {
+          return flexRecord.cannot_overlap;
+        }
+      }
     }
-  } catch { }
+  } catch {
+    // ignore malformed scheduling notes
+  }
   return false;
 }
 
@@ -3325,11 +3336,18 @@ async function buildConflictDecision(args: {
   const diaGuruConflicts = args.conflicts.filter((c) => c.diaGuru && c.captureId);
   const captureMap = await loadConflictCaptures(args.admin, diaGuruConflicts);
   const conflictCaptures = Array.from(captureMap.values()).map((c) => {
-    let facets: any = {};
+    let facets: Record<string, unknown> = {};
     try {
-      const raw = (c as any).scheduling_notes as string | null | undefined;
-      if (raw && typeof raw === 'string' && raw.trim().length > 0) facets = JSON.parse(raw);
-    } catch { }
+      const raw = typeof c.scheduling_notes === "string" ? c.scheduling_notes : null;
+      if (raw && raw.trim().length > 0) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          facets = parsed as Record<string, unknown>;
+        }
+      }
+    } catch {
+      // ignore malformed scheduling notes
+    }
     return {
       id: c.id,
       content: c.content,

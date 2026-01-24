@@ -1,13 +1,11 @@
-import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { CalendarTokenRow, CaptureEntryRow, Database } from "../types.ts";
-import { replaceCaptureChunks, type ChunkRecord } from "./chunks.ts";
+import { replaceCaptureChunks } from "./chunks.ts";
 import {
   computeRigidityScore,
   evaluatePreemptionNetGain,
   logSchedulerEvent,
   schedulerConfig,
-  type NetGainEvaluation,
-  type PreemptionDisplacement,
 } from "./scheduler-config.ts";
 // Wait, I moved BUFFER_MINUTES. I should import it. 
 // But multi_replace requires consistent state.
@@ -15,36 +13,19 @@ import {
 
 import {
   BUFFER_MINUTES,
-  DEADLINE_RULES,
-  COMPRESSED_BUFFER_MINUTES,
   SEARCH_DAYS,
-  DAY_END_HOUR,
   SLOT_INCREMENT_MINUTES,
-  STABILITY_WINDOW_MINUTES,
   DEFAULT_MIN_CHUNK_MINUTES,
-  TARGET_CHUNK_MINUTES,
-  ROUTINE_PRIORITY_RULES,
   ScheduleError,
-  type RoutineKind,
-  type DeadlineStrategy,
   type CalendarEvent,
-  type ScheduleAdvisor,
   type ConflictSummary,
   type ScheduleDecision,
   type ConflictDecision,
   type PreferredSlot,
-  type OccupancySlotStatus,
-  type OccupancySlot,
-  type OccupancyStats,
-  type OccupancySegment,
-  type OccupancyDaySummary,
-  type OccupancyGrid,
   type GridWindowCandidate,
   type GridPreemptionChoice,
-  type ChunkPlacementResult,
   type SerializedChunk,
   type SchedulingPlan,
-  isRoutineKind,
   normalizeRoutineCapture,
   findNextAvailableSlot,
   computeBusyIntervals,
@@ -58,9 +39,6 @@ import {
   summarizeWindowCapacity,
   buildDeadlineFailurePayload,
   parsePreferredSlot,
-  normalizeConstraintType,
-  parseIsoDate,
-  computeDateDeadline,
   resolveDeadlineFromCapture,
   computeSchedulingPlan,
   scheduleWithPlan,
@@ -70,7 +48,6 @@ import {
   withinStabilityWindow,
   selectMinimalPreemptionSet,
   buildPreemptionDisplacements,
-  estimateConflictMinutes,
   detectRoutineKind,
   shouldEnforceWorkingWindow,
   derivePreferredTimeOfDayBands,
@@ -79,18 +56,9 @@ import {
   collectConflictingEvents,
   isSlotWithinWorkingWindow,
   registerInterval,
-  parseEventDate,
   addMinutes,
-  addDays,
-  startOfDayOffset,
-  isBeforeDayStart,
-  isAfterDayEnd,
-  toLocalDate,
-  toUtcDate,
   isSlotFree,
-  buildZonedDateTime,
   readCannotOverlapFromNotes,
-  resolveSleepBaseReference
 } from "./scheduling-core.ts";
 
 
@@ -607,8 +575,6 @@ export async function handler(req: Request) {
         let captureMap: Map<string, CaptureEntryRow> | null = null;
         let selectedConflicts: ConflictSummary[] = [];
         let canRebalance = false;
-        let preemptionEvaluation: NetGainEvaluation | null = null;
-
         if (
           allowRebalance &&
           plan.mode !== "flexible" &&
@@ -2063,11 +2029,18 @@ async function buildConflictDecision(args: {
   const diaGuruConflicts = args.conflicts.filter((c) => c.diaGuru && c.captureId);
   const captureMap = await loadConflictCaptures(args.admin, diaGuruConflicts);
   const conflictCaptures = Array.from(captureMap.values()).map((c) => {
-    let facets: any = {};
+    let facets: Record<string, unknown> = {};
     try {
-      const raw = (c as any).scheduling_notes as string | null | undefined;
-      if (raw && typeof raw === 'string' && raw.trim().length > 0) facets = JSON.parse(raw);
-    } catch { }
+      const raw = typeof c.scheduling_notes === "string" ? c.scheduling_notes : null;
+      if (raw && raw.trim().length > 0) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          facets = parsed as Record<string, unknown>;
+        }
+      }
+    } catch {
+      // ignore malformed scheduling notes
+    }
     return {
       id: c.id,
       content: c.content,
@@ -2474,7 +2447,9 @@ function mergeSchedulingNotes(
         ...nextFields,
       });
     }
-  } catch {}
+  } catch {
+    // ignore malformed notes payload
+  }
   return JSON.stringify({
     previous_note: existing,
     ...nextFields,

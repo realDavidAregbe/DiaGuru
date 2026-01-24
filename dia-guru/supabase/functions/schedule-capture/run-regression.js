@@ -23,6 +23,7 @@
 import { createClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import process from "node:process";
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const serviceRoleKey = process.env.SERVICE_ROLE_KEY;

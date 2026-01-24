@@ -20,7 +20,13 @@ module.exports = {
   preset: 'jest-expo',
   setupFilesAfterEnv: ['@testing-library/jest-native/extend-expect'],
   transformIgnorePatterns: [`node_modules/(?!(${EXPO_MODULES})/)`],
-  testPathIgnorePatterns: ['/node_modules/', '/android/', '/ios/', '<rootDir>/supabase/functions/'],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/android/',
+    '/ios/',
+    '<rootDir>/supabase/functions/',
+    '<rootDir>/TemporaryCode/',
+  ],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
   },

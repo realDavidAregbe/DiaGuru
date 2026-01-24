@@ -377,7 +377,9 @@ function mergeSchedulingNotes(existing: string | null | undefined, note: string)
         ...nextFields,
       });
     }
-  } catch {}
+  } catch {
+    // ignore parse failures in scheduling notes
+  }
   return JSON.stringify({
     previous_note: existing,
     ...nextFields,
