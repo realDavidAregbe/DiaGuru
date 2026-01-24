@@ -13,13 +13,13 @@
     "deno:check": "deno check --unstable-lockfile-v5 --config supabase/functions/deno.json supabase/functions/**/*.ts",
     "test": "jest",
     "deno:lint": "deno lint --unstable-lockfile-v5 --config supabase/functions/deno.json supabase/functions",
-    "deno:test": "deno test --unstable-lockfile-v5 --no-check --config supabase/functions/deno.json supabase/functions",
+    "deno:test": "deno test --unstable-lockfile-v5 --no-check --allow-env --config supabase/functions/deno.json supabase/functions",
     "validate": "npm run typecheck && npm run test && npm run deno:lint && npm run deno:check && npm run deno:test",
     "dev": "expo start",
     "dev:lan": "expo start --lan",
     "dev:offline": "expo start --offline",
     "jest:coverage": "jest --coverage",
-    "deno:coverage": "deno test --unstable-lockfile-v5 --no-check --coverage=coverage/deno --config supabase/functions/deno.json supabase/functions && deno coverage coverage/deno --lcov > coverage/deno.lcov",
+    "deno:coverage": "deno test --unstable-lockfile-v5 --no-check --allow-env --coverage=coverage/deno --config supabase/functions/deno.json supabase/functions && deno coverage coverage/deno --lcov > coverage/deno.lcov",
     "coverage": "npm run jest:coverage && npm run deno:coverage"
   },
   "dependencies": {
