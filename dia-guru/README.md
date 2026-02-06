@@ -94,8 +94,9 @@ Follow these steps to run DiaGuru locally and deploy supporting services.
 1. Clone the repository
    ```bash
    git clone https://github.com/realDavidAregbe/DiaGuru.git
-   cd DiaGuru
-   npm install
+   cd DiaGuru/dia-guru
+   npm ci
+   npx expo start
    ```
 2. (Optional) Launch Duckling locally
    ```bash
