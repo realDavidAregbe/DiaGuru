@@ -13,9 +13,10 @@
   <p align="center">
     Intelligent daily planner that captures what is on your mind, parses the intent, and arranges your Google Calendar automatically.
     <br />
-    <a href="https://github.com/realjbgunner24/DiaGuru/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
-    &middot;
-    <a href="https://github.com/realjbgunner24/DiaGuru/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
+   <a href="https://github.com/realDavidAregbe/DiaGuru/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
+  &middot;
+  <a href="https://github.com/realDavidAregbe/DiaGuru/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
+
   </p>
 </div>
 
@@ -91,7 +92,7 @@ Follow these steps to run DiaGuru locally and deploy supporting services.
 
 1. Clone the repository
    ```bash
-   git clone https://github.com/realjbgunner24/DiaGuru.git
+   git clone https://github.com/realDavidAregbe/DiaGuru.git
    cd DiaGuru
    npm install
    ```
@@ -178,7 +179,7 @@ npm run validate        # typecheck + Jest + Deno (CI default)
 - [ ] Personalized heuristics that learn from completion history.
 - [ ] Push notification cadence tuned to user preferences.
 
-See the [open issues](https://github.com/realjbgunner24/DiaGuru/issues) for the full backlog.
+See the [open issues](https://github.com/realDavidAregbe/DiaGuru/issues) for the full backlog.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -190,13 +191,13 @@ This project is currently closed to outside contributions while the core experie
 
 ## License
 
-Distributed under a private license. Contact the maintainers for reuse permissions.
+Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Contact
 
-Project Link: [https://github.com/realjbgunner24/DiaGuru](https://github.com/realjbgunner24/DiaGuru)
+Project Link: [https://github.com/realDavidAregbe/DiaGuru](https://github.com/realDavidAregbe/DiaGuru)
 
 Have questions? Open a discussion or ping us through the repo issues.
 
@@ -211,12 +212,15 @@ Have questions? Open a discussion or ping us through the repo issues.
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- MARKDOWN LINKS & IMAGES -->
-[contributors-shield]: https://img.shields.io/github/contributors/realjbgunner24/DiaGuru.svg?style=for-the-badge
-[contributors-url]: https://github.com/realjbgunner24/DiaGuru/graphs/contributors
-[issues-shield]: https://img.shields.io/github/issues/realjbgunner24/DiaGuru.svg?style=for-the-badge
-[issues-url]: https://github.com/realjbgunner24/DiaGuru/issues
-[license-shield]: https://img.shields.io/badge/license-Private-lightgrey?style=for-the-badge
-[license-url]: https://github.com/realjbgunner24/DiaGuru
+[contributors-shield]: https://img.shields.io/github/contributors/realDavidAregbe/DiaGuru.svg?style=for-the-badge
+[contributors-url]: https://github.com/realDavidAregbe/DiaGuru/graphs/contributors
+
+[issues-shield]: https://img.shields.io/github/issues/realDavidAregbe/DiaGuru.svg?style=for-the-badge
+[issues-url]: https://github.com/realDavidAregbe/DiaGuru/issues
+
+[license-shield]: https://img.shields.io/github/license/realDavidAregbe/DiaGuru.svg?style=for-the-badge
+[license-url]: https://github.com/realDavidAregbe/DiaGuru/blob/main/LICENSE
+
 [expo-shield]: https://img.shields.io/badge/Expo-1B1F23?style=for-the-badge&logo=expo&logoColor=fff
 [expo-url]: https://expo.dev
 [react-native-shield]: https://img.shields.io/badge/React%20Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB

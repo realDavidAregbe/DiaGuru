@@ -15,5 +15,6 @@
     "deno:lint": "npm --prefix dia-guru run deno:lint",
     "deno:check": "npm --prefix dia-guru run deno:check",
     "deno:test": "npm --prefix dia-guru run deno:test"
-  }
+  },
+  "license": "MIT"
 }
