@@ -372,3 +372,6 @@ Deno.test("computeSchedulingPlan: deadline_time builds a deadline plan", () => {
   assert(plan.deadline);
   assertEquals(plan.deadline!.toISOString(), "2026-02-03T18:00:00.000Z");
 });
+
+//acceptance tests to confirm
+// schedule by, before, around, at, between, on , due, after, no specified date-time, no specified time but specified date, no specified date, specified flexible

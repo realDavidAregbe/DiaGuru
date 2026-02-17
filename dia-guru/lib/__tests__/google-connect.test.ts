@@ -1,4 +1,4 @@
-﻿import { connectGoogleCalendar, getCalendarHealth } from '../google-connect';
+import { connectGoogleCalendar, getCalendarHealth } from '../google-connect';
 
 jest.mock('expo-linking', () => ({ openURL: jest.fn() }));
 

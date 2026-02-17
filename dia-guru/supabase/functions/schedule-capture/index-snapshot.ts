@@ -12,10 +12,9 @@ import {
   type PreemptionDisplacement,
 } from "./scheduler-config.ts";
 
-const TEST_CALENDAR_ID = encodeURIComponent(
-  "01c2ff9a9282ccc1fea448dfa1c4bd6389ef453e0d6e4c047d8413423f19f460@group.calendar.google.com",
-);
-const GOOGLE_EVENTS = `https://www.googleapis.com/calendar/v3/calendars/${TEST_CALENDAR_ID}/events`;
+const GOOGLE_CALENDAR_ID = (Deno.env.get("GOOGLE_CALENDAR_ID") ?? "primary").trim() || "primary";
+const ENCODED_GOOGLE_CALENDAR_ID = encodeURIComponent(GOOGLE_CALENDAR_ID);
+const GOOGLE_EVENTS = `https://www.googleapis.com/calendar/v3/calendars/${ENCODED_GOOGLE_CALENDAR_ID}/events`;
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
 
 const BUFFER_MINUTES = 30;
@@ -303,18 +302,22 @@ function normalizeRoutineCapture(input: CaptureEntryRow, options: { referenceNow
   } else if (isMeal) {
     // Default meal window: 12:00-14:00 local if none provided.
     if (!capture.window_start || !capture.window_end) {
-      const localYear = localDate.getUTCFullYear();
-      const localMonth = localDate.getUTCMonth();
-      const localDay = localDate.getUTCDate();
+      const timezone = options.timezone ?? "UTC";
+      const mealStart = buildZonedDateTime({
+        timezone,
+        reference: referenceNow,
+        hour: 12,
+        minute: 0,
+      });
+      const mealEnd = buildZonedDateTime({
+        timezone,
+        reference: referenceNow,
+        hour: 14,
+        minute: 0,
+      });
 
-      const localMealStartMs = Date.UTC(localYear, localMonth, localDay, 12, 0, 0, 0);
-      const localMealEndMs = Date.UTC(localYear, localMonth, localDay, 14, 0, 0, 0);
-
-      const mealStart = new Date(localMealStartMs - offsetMinutes * 60000);
-      const mealEnd = new Date(localMealEndMs - offsetMinutes * 60000);
-
-      capture.window_start = mealStart.toISOString();
-      capture.window_end = mealEnd.toISOString();
+      capture.window_start = mealStart;
+      capture.window_end = mealEnd;
       capture.constraint_type = "window";
       capture.constraint_time = capture.window_start;
       capture.constraint_end = capture.window_end;
@@ -371,12 +374,13 @@ export async function handler(req: Request) {
     const userId = userData.user.id;
     const admin = createClient<Database, "public">(supabaseUrl, serviceRole);
 
-    const { data: capture, error: captureError } = await admin
+    const { data: captureData, error: captureError } = await admin
       .from("capture_entries")
       .select("*")
       .eq("id", captureId)
       .single();
-    if (captureError || !capture) return json({ error: "Capture not found" }, 404);
+    if (captureError || !captureData) return json({ error: "Capture not found" }, 404);
+    const capture = captureData as CaptureEntryRow;
     if (capture.user_id !== userId) return json({ error: "Forbidden" }, 403);
 
     logScheduleSummary("schedule.request", {
@@ -876,9 +880,7 @@ export async function handler(req: Request) {
                           targetPriority: evaluation.targetPriority,
                         },
                       });
-                      if (evaluation.allowed) {
-                        preemptionEvaluation = evaluation;
-                      } else {
+                      if (!evaluation.allowed) {
                         logSchedulerEvent("preemption.rejected", {
                           captureId: capture.id,
                           reason: "net_gain_threshold",
@@ -1420,13 +1422,14 @@ export async function resolveCalendarClient(
   clientId: string,
   clientSecret: string,
 ) {
-  const { data: account, error: accountError } = await admin
+  const { data: accountData, error: accountError } = await admin
     .from("calendar_accounts")
     .select("id, needs_reconnect")
     .eq("user_id", userId)
     .eq("provider", "google")
     .single();
-  if (accountError || !account) return null;
+  if (accountError || !accountData) return null;
+  const account = accountData as { id: number; needs_reconnect?: boolean };
 
   const { data: tokenRow, error: tokenError } = await admin
     .from("calendar_tokens")
@@ -3210,7 +3213,7 @@ async function rescheduleCaptures(args: {
     const aMinutes = Math.max(5, Math.min(a.estimated_minutes ?? 30, 480));
     const bMinutes = Math.max(5, Math.min(b.estimated_minutes ?? 30, 480));
     if (aMinutes !== bMinutes) return aMinutes - bMinutes;
-    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    return new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime();
   });
 
   for (const capture of queue) {

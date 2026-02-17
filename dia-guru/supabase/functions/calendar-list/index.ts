@@ -9,10 +9,9 @@ type GEvent = {
   extendedProperties?: { private?: Record<string, string>; shared?: Record<string, string> };
 };
 
-const TEST_CALENDAR_ID = encodeURIComponent(
-  "01c2ff9a9282ccc1fea448dfa1c4bd6389ef453e0d6e4c047d8413423f19f460@group.calendar.google.com",
-);
-const GOOGLE_EVENTS = `https://www.googleapis.com/calendar/v3/calendars/${TEST_CALENDAR_ID}/events`;
+const GOOGLE_CALENDAR_ID = (Deno.env.get("GOOGLE_CALENDAR_ID") ?? "primary").trim() || "primary";
+const ENCODED_GOOGLE_CALENDAR_ID = encodeURIComponent(GOOGLE_CALENDAR_ID);
+const GOOGLE_EVENTS = `https://www.googleapis.com/calendar/v3/calendars/${ENCODED_GOOGLE_CALENDAR_ID}/events`;
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
 
 /**

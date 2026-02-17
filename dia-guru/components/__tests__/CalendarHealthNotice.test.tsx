@@ -1,6 +1,6 @@
 import { fireEvent, render } from '@testing-library/react-native';
 
-import CalendarHealthNotice from '../CalendarHealthNotice';
+import { CalendarHealthNotice } from '../CalendarHealthNotice';
 import type { CalendarHealth } from '@/lib/google-connect';
 
 const healthBase: CalendarHealth = {

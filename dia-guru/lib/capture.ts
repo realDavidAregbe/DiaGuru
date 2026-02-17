@@ -339,7 +339,6 @@ export async function parseCapture(input: ParseCaptureArgs): Promise<ParseTaskRe
         if (typeof (ctx as any).json === 'function') {
           try {
             const payload = await (ctx as any).json();
-            // eslint-disable-next-line no-console
             console.log('parse-task response payload', payload);
             if (payload && typeof payload === 'object') {
               const rec = payload as Record<string, unknown>;
@@ -398,7 +397,6 @@ export async function parseCapture(input: ParseCaptureArgs): Promise<ParseTaskRe
   }
 
   try {
-    // eslint-disable-next-line no-console
     console.log('parse-task response payload', data);
   } catch {}
 

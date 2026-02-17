@@ -1337,13 +1337,11 @@ export function isSlotWithinConstraints(capture: CaptureEntryRow, slot: { start:
     if (candidates.length === 0) return true;
     const minEnd = new Date(Math.min(...candidates.map((d) => d.getTime())));
     
-    if (capture.constraint_type === "start_time") {
-        if(capture.window_start){
-            const window_start = new Date(capture.window_start);
-            const window_end = new Date(capture.window_end);
-            if(!Number.isNaN(window_start.getTime()) && !Number.isNaN(window_end.getTime())){
-                return window_start <= slot.start && slot.start <= window_end;
-            }
+    if (capture.constraint_type === "start_time" && capture.window_start && capture.window_end) {
+        const window_start = new Date(capture.window_start);
+        const window_end = new Date(capture.window_end);
+        if (!Number.isNaN(window_start.getTime()) && !Number.isNaN(window_end.getTime())) {
+            return window_start <= slot.start && slot.start <= window_end;
         }
     }
     return slot.end.getTime() <= minEnd.getTime();

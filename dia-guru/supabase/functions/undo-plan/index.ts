@@ -140,9 +140,9 @@ export async function handler(req: Request) {
           : Math.max(0, (capture.reschedule_count ?? 0) - 1);
 
       const restoredStatus =
-        action.prev_status === "scheduled" && !recreatedEvent
+        (action.prev_status === "scheduled" && !recreatedEvent
           ? "pending"
-          : action.prev_status;
+          : action.prev_status) ?? "pending";
       const restoredStart =
         action.prev_status === "scheduled" && !recreatedEvent
           ? null

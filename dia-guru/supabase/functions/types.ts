@@ -46,6 +46,13 @@ export type CaptureEntryRow = {
   manual_touch_at: string | null;
 };
 
+type TableDef<Row extends Record<string, unknown>> = {
+  Row: Row;
+  Insert: Partial<Row>;
+  Update: Partial<Row>;
+  Relationships: [];
+};
+
 
 export type CaptureChunkRow = {
   id: string;
@@ -108,13 +115,14 @@ export type PlanActionRow = {
 export type Database = {
   public: {
     Tables: {
-      capture_entries: { Row: CaptureEntryRow };
-      capture_chunks: { Row: CaptureChunkRow };
-      calendar_accounts: { Row: CalendarAccountRow };
-      calendar_tokens: { Row: CalendarTokenRow };
-      plan_runs: { Row: PlanRunRow };
-      plan_actions: { Row: PlanActionRow };
+      capture_entries: TableDef<CaptureEntryRow>;
+      capture_chunks: TableDef<CaptureChunkRow>;
+      calendar_accounts: TableDef<CalendarAccountRow>;
+      calendar_tokens: TableDef<CalendarTokenRow>;
+      plan_runs: TableDef<PlanRunRow>;
+      plan_actions: TableDef<PlanActionRow>;
     };
+    Views: Record<string, never>;
     Functions: Record<string, never>;
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

@@ -49,11 +49,13 @@ type ExtractionKind =
   | "meeting"
   | "study"
   | "errand"
-  | "other";
+  | "other"
+  | "routine.sleep"
+  | "routine.meal";
 type Importance = {
-  urgency: 1 | 2 | 3 | 4 | 5;
-  impact: 1 | 2 | 3 | 4 | 5;
-  reschedule_penalty: 0 | 1 | 2 | 3;
+  urgency: 1 | 2 | 3 | 4 | 5 | null;
+  impact: 1 | 2 | 3 | 4 | 5 | null;
+  reschedule_penalty: 0 | 1 | 2 | 3 | null;
   blocking: boolean;
   rationale: string;
 } | null;
@@ -597,7 +599,10 @@ function normalizeExtraction(obj: unknown): ExtractResponse["parsed"] | null {
     time_preferences,
     importance,
     flexibility,
-    kind: oneOf(record.kind, ["task", "appointment", "call", "meeting", "study", "errand", "other"] as const),
+    kind: oneOf(
+      record.kind,
+      ["task", "appointment", "call", "meeting", "study", "errand", "other", "routine.sleep", "routine.meal"] as const,
+    ),
     missing,
     clarifying_question,
     notes,

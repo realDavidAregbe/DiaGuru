@@ -172,7 +172,7 @@ function resolveTables(tables: string[] | null) {
   if (!tables || tables.length === 0) {
     return { tables: [...DEFAULT_TABLES], unknownTables: [] as string[] };
   }
-  const allowlist = new Set(DEFAULT_TABLES);
+  const allowlist = new Set<string>(DEFAULT_TABLES);
   const unknownTables = tables.filter((table) => !allowlist.has(table));
   const requested = new Set(tables);
   const ordered = DEFAULT_TABLES.filter((table) => requested.has(table));

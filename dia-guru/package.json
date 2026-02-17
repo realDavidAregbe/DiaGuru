@@ -8,7 +8,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "eslint . --ext .js,.jsx,.ts,.tsx --ignore-pattern supabase/functions/**",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx --ignore-pattern supabase/functions/** --ignore-pattern TemporaryCode/**",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "deno:check": "deno check --unstable-lockfile-v5 --config supabase/functions/deno.json supabase/functions/**/*.ts",
     "test": "jest",
