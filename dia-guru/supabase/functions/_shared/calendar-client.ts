@@ -16,20 +16,20 @@ export async function resolveCalendarClient(
   clientId: string,
   clientSecret: string,
 ) {
-  const { data: account, error: accountError } = await admin
+  const { data: accountData, error: accountError } = await admin
     .from("calendar_accounts")
     .select("id, needs_reconnect")
     .eq("user_id", userId)
     .eq("provider", "google")
     .single();
-  if (accountError || !account) return null;
+  if (accountError || !accountData) return null;
 
-  const accountRow = account as CalendarAccountRow;
+  const accountRow = accountData as CalendarAccountRow;
 
   const { data: tokenRow, error: tokenError } = await admin
     .from("calendar_tokens")
     .select("access_token, refresh_token, expiry")
-    .eq("account_id", account.id)
+    .eq("account_id", accountRow.id)
     .single();
   if (tokenError || !tokenRow) {
     await setCalendarReconnectFlag(admin, accountRow.id, true);

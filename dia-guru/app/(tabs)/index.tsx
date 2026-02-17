@@ -1,4 +1,4 @@
-import CalendarHealthNotice from '@/components/CalendarHealthNotice';
+import { CalendarHealthNotice } from '@/components/CalendarHealthNotice';
 import { useSupabaseSession } from '@/hooks/useSupabaseSession';
 import {
   addCapture,

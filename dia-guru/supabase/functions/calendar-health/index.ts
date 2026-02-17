@@ -73,9 +73,11 @@ export async function getCalendarHealth(args: {
     throw new Error(tokenError.message);
   }
 
-  const needsReconnectFlag = latestAccount?.needs_reconnect ?? account.needs_reconnect ?? false;
-  const expiresAt = tokenRow?.expiry ?? null;
-  const hasRefreshToken = Boolean(tokenRow?.refresh_token);
+  const latest = (latestAccount as { needs_reconnect?: boolean } | null) ?? null;
+  const token = (tokenRow as { expiry?: string | null; refresh_token?: string | null } | null) ?? null;
+  const needsReconnectFlag = latest?.needs_reconnect ?? account.needs_reconnect ?? false;
+  const expiresAt = token?.expiry ?? null;
+  const hasRefreshToken = Boolean(token?.refresh_token);
 
   let expiresInSeconds: number | null = null;
   if (expiresAt) {
@@ -84,7 +86,7 @@ export async function getCalendarHealth(args: {
   }
 
   const refreshedFlag = Boolean(resolved?.refreshed);
-  const needsReconnect = needsReconnectFlag || !tokenRow;
+  const needsReconnect = needsReconnectFlag || !token;
   const status: HealthStatus = needsReconnect ? "needs_reconnect" : "healthy";
 
   const checkedAt = new Date().toISOString();

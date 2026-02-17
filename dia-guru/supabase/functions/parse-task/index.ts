@@ -75,9 +75,9 @@ type DiaGuruTaskExtraction = {
   } | null;
   time_preferences: { time_of_day: "morning" | "afternoon" | "evening" | "night" | null; day: "today" | "tomorrow" | "specific_date" | "any" | null } | null;
   importance?: {
-    urgency: 1 | 2 | 3 | 4 | 5;
-    impact: 1 | 2 | 3 | 4 | 5;
-    reschedule_penalty: 0 | 1 | 2 | 3;
+    urgency: 1 | 2 | 3 | 4 | 5 | null;
+    impact: 1 | 2 | 3 | 4 | 5 | null;
+    reschedule_penalty: 0 | 1 | 2 | 3 | null;
     blocking: boolean;
     rationale: string;
   } | null;
@@ -88,7 +88,17 @@ type DiaGuruTaskExtraction = {
     min_chunk_minutes: number | null;
     max_splits: number | null;
   } | null;
-  kind?: "task" | "appointment" | "call" | "meeting" | "study" | "errand" | "other" | null;
+  kind?:
+    | "task"
+    | "appointment"
+    | "call"
+    | "meeting"
+    | "study"
+    | "errand"
+    | "other"
+    | "routine.sleep"
+    | "routine.meal"
+    | null;
   missing: string[];
   clarifying_question: string | null;
   notes: string[];
@@ -121,9 +131,9 @@ type CaptureMapping = {
   execution_window_source?: "explicit" | "inferred" | "default" | null;
   time_preferences?: { time_of_day?: "morning" | "afternoon" | "evening" | "night" | null; day?: "today" | "tomorrow" | "specific_date" | "any" | null } | null;
   importance?: {
-    urgency?: 1 | 2 | 3 | 4 | 5;
-    impact?: 1 | 2 | 3 | 4 | 5;
-    reschedule_penalty?: 0 | 1 | 2 | 3;
+    urgency?: 1 | 2 | 3 | 4 | 5 | null;
+    impact?: 1 | 2 | 3 | 4 | 5 | null;
+    reschedule_penalty?: 0 | 1 | 2 | 3 | null;
     blocking?: boolean;
     rationale?: string;
   } | null;
@@ -717,6 +727,31 @@ export const __test__ = {
   requestDeepSeekClarification,
 };
 
+type DucklingItem = {
+  dim?: string;
+  entity?: string;
+  body?: string;
+  value?: Record<string, unknown>;
+};
+
+type DurationCandidate = {
+  minutes: number;
+  source: string;
+};
+
+type TemporalCandidate =
+  | {
+    type: "value";
+    iso: string;
+    source: string;
+  }
+  | {
+    type: "interval";
+    from?: string;
+    to?: string;
+    source: string;
+  };
+
 function describeError(prefix: string, error: unknown) {
   if (error instanceof Error) {
     return `${prefix}: ${error.message}`;
@@ -936,7 +971,10 @@ export function normalizeExtraction(obj: unknown): DiaGuruTaskExtraction | null 
     time_preferences,
     importance,
     flexibility,
-    kind: one(record.kind, ["task", "appointment", "call", "meeting", "study", "errand", "other"] as const),
+    kind: one(
+      record.kind,
+      ["task", "appointment", "call", "meeting", "study", "errand", "other", "routine.sleep", "routine.meal"] as const,
+    ),
     missing: Array.isArray(record.missing) ? record.missing.map(String) : [],
     clarifying_question: record.clarifying_question == null ? null : String(record.clarifying_question),
     notes: Array.isArray(record.notes) ? record.notes.map(String) : [],
@@ -1120,12 +1158,13 @@ function applyRoutineNormalization(args: {
 
 function normalizeSleepExtraction(extraction: DiaGuruTaskExtraction, timezone: string, referenceNow: Date) {
   extraction.kind = "routine.sleep";
+  const existingRationale = extraction.importance?.rationale;
   const importance = extraction.importance ?? {
     urgency: 2,
     impact: 2,
     reschedule_penalty: 1,
     blocking: false,
-    rationale: extraction.importance?.rationale ?? "Sleep routine normalized.",
+    rationale: existingRationale ?? "Sleep routine normalized.",
   };
   importance.urgency = Math.min(importance.urgency ?? 2, 3) as 1 | 2 | 3 | 4 | 5;
   importance.impact = Math.min(importance.impact ?? 2, 3) as 1 | 2 | 3 | 4 | 5;
@@ -1181,12 +1220,13 @@ function normalizeMealExtraction(
   normalizedText: string,
 ) {
   extraction.kind = "routine.meal";
+  const existingRationale = extraction.importance?.rationale;
   const importance = extraction.importance ?? {
     urgency: 2,
     impact: 2,
     reschedule_penalty: 0,
     blocking: false,
-    rationale: extraction.importance?.rationale ?? "Meal routine normalized.",
+    rationale: existingRationale ?? "Meal routine normalized.",
   };
   importance.urgency = Math.min(importance.urgency ?? 2, 2) as 1 | 2 | 3 | 4 | 5;
   importance.impact = Math.min(importance.impact ?? 2, 2) as 1 | 2 | 3 | 4 | 5;

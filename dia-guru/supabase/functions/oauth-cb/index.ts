@@ -84,6 +84,7 @@ Deno.serve(async (req) => {
     return new Response(ok, { status: 200, headers: { "Content-Type": "text/html" } });
   } catch (error) {
     console.error("OAuth callback error:", error);
-    return new Response(`OAuth error: ${error.message}`, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    return new Response(`OAuth error: ${message}`, { status: 500 });
   }
 });

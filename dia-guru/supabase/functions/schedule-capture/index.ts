@@ -7,9 +7,6 @@ import {
   logSchedulerEvent,
   schedulerConfig,
 } from "./scheduler-config.ts";
-// Wait, I moved BUFFER_MINUTES. I should import it. 
-// But multi_replace requires consistent state.
-// I will Replace lines 18-337 with the Import block.
 
 import {
   BUFFER_MINUTES,
@@ -62,10 +59,51 @@ import {
 } from "./scheduling-core.ts";
 
 
-const TEST_CALENDAR_ID = encodeURIComponent("01c2ff9a9282ccc1fea448dfa1c4bd6389ef453e0d6e4c047d8413423f19f460@group.calendar.google.com");
-const GOOGLE_EVENTS = `https://www.googleapis.com/calendar/v3/calendars/${TEST_CALENDAR_ID}/events`;
+const GOOGLE_CALENDAR_ID = (Deno.env.get("GOOGLE_CALENDAR_ID") ?? "primary").trim() || "primary";
+const ENCODED_GOOGLE_CALENDAR_ID = encodeURIComponent(GOOGLE_CALENDAR_ID);
+const GOOGLE_EVENTS = `https://www.googleapis.com/calendar/v3/calendars/${ENCODED_GOOGLE_CALENDAR_ID}/events`;
 
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
+
+type CalendarClientCredentials = {
+  accountId: number;
+  accessToken: string;
+  refreshToken: string | null;
+  refreshed: boolean;
+};
+
+type GoogleCalendarActions = {
+  listEvents: (timeMin: string, timeMax: string) => Promise<CalendarEvent[]>;
+  deleteEvent: (options: { eventId: string; etag?: string | null }) => Promise<void>;
+  createEvent: (options: {
+    capture: CaptureEntryRow;
+    slot: { start: Date; end: Date };
+    planId?: string | null;
+    actionId: string;
+    priorityScore: number;
+    description?: string;
+  }) => Promise<{ id: string; etag: string | null }>;
+  getEvent: (eventId: string) => Promise<CalendarEvent | null>;
+};
+
+type LlmConfig = {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+};
+
+type AdvisorResult = {
+  advisor: {
+    action: "suggest_slot" | "ask_overlap" | "defer";
+    message: string;
+    slot: { start: string; end: string } | null;
+  } | null;
+  metadata: {
+    llmAttempted: boolean;
+    llmModel?: string | null;
+    llmError?: string | null;
+  };
+};
 
 type CaptureSnapshot = {
   status: string | null;
@@ -82,9 +120,9 @@ type PlanActionRecord = {
   actionId: string;
   captureId: string;
   captureContent: string;
-  actionType: "reschedule" | "unscheduled" | "scheduled" | "rescheduled";
-  prev: CaptureSnapshot | null;
-  next: CaptureSnapshot | null;
+  actionType: "unscheduled" | "scheduled" | "rescheduled";
+  prev: CaptureSnapshot;
+  next: CaptureSnapshot;
 };
 
 type ScheduleExplanation = {
@@ -150,12 +188,13 @@ export async function handler(req: Request) {
     const userId = userData.user.id;
     const admin = createClient<Database, "public">(supabaseUrl, serviceRole);
 
-    const { data: capture, error: captureError } = await admin
+    const { data: captureData, error: captureError } = await admin
       .from("capture_entries")
       .select("*")
       .eq("id", captureId)
       .single();
-    if (captureError || !capture) return json({ error: "Capture not found" , message: captureError }, 404);
+    if (captureError || !captureData) return json({ error: "Capture not found" , message: captureError }, 404);
+    const capture = captureData as CaptureEntryRow;
     if (capture.user_id !== userId) return json({ error: "Forbidden" }, 403);
 
     logScheduleSummary("schedule.request", {
@@ -661,9 +700,7 @@ export async function handler(req: Request) {
                           targetPriority: evaluation.targetPriority,
                         },
                       });
-                      if (evaluation.allowed) {
-                        preemptionEvaluation = evaluation;
-                      } else {
+                      if (!evaluation.allowed) {
                         logSchedulerEvent("preemption.rejected", {
                           captureId: capture.id,
                           reason: "net_gain_threshold",
@@ -744,8 +781,9 @@ export async function handler(req: Request) {
           : "Scheduled at preferred slot requested by user.";
 
       const usedPreferred = slotMatchesTarget(preferredSlot, preferredSlot);
-      const usedStartTolerance =
-        plan.mode === "start" && preferredSlot && !usedPreferred;
+      const usedStartTolerance = Boolean(
+        plan.mode === "start" && preferredSlot && !usedPreferred,
+      );
       const explanation = buildScheduleExplanation({
         plan,
         slot: preferredSlot,
@@ -910,8 +948,9 @@ export async function handler(req: Request) {
         registerInterval(busyIntervals, directSlot);
 
         const usedPreferred = slotMatchesTarget(directSlot, plan.preferredSlot ?? null);
-        const usedStartTolerance =
-          plan.mode === "start" && plan.preferredSlot && !usedPreferred;
+        const usedStartTolerance = Boolean(
+          plan.mode === "start" && plan.preferredSlot && !usedPreferred,
+        );
         const explanation = buildScheduleExplanation({
           plan,
           slot: directSlot,
@@ -1214,8 +1253,9 @@ export async function handler(req: Request) {
     });
 
     const usedPreferred = slotMatchesTarget(validCandidate, plan.preferredSlot ?? null);
-    const usedStartTolerance =
-      plan.mode === "start" && plan.preferredSlot && !usedPreferred;
+    const usedStartTolerance = Boolean(
+      plan.mode === "start" && plan.preferredSlot && !usedPreferred,
+    );
     const explanation = buildScheduleExplanation({
       plan,
       slot: validCandidate,
@@ -1300,13 +1340,14 @@ export async function resolveCalendarClient(
   clientId: string,
   clientSecret: string,
 ) {
-  const { data: account, error: accountError } = await admin
+  const { data: accountData, error: accountError } = await admin
     .from("calendar_accounts")
     .select("id, needs_reconnect")
     .eq("user_id", userId)
     .eq("provider", "google")
     .single();
-  if (accountError || !account) return null;
+  if (accountError || !accountData) return null;
+  const account = accountData as { id: number; needs_reconnect?: boolean };
 
   const { data: tokenRow, error: tokenError } = await admin
     .from("calendar_tokens")
@@ -1539,8 +1580,9 @@ async function tryScheduleWithOverlap(args: {
   }
 
   const usedPreferred = slotMatchesTarget(args.slot, args.preferredSlot);
-  const usedStartTolerance =
-    args.plan.mode === "start" && args.preferredSlot && !usedPreferred;
+  const usedStartTolerance = Boolean(
+    args.plan.mode === "start" && args.preferredSlot && !usedPreferred,
+  );
   const explanation = buildScheduleExplanation({
     plan: args.plan,
     slot: args.slot,
@@ -1878,7 +1920,7 @@ async function rescheduleCaptures(args: {
     const aMinutes = Math.max(5, Math.min(a.estimated_minutes ?? 30, 480));
     const bMinutes = Math.max(5, Math.min(b.estimated_minutes ?? 30, 480));
     if (aMinutes !== bMinutes) return aMinutes - bMinutes;
-    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    return new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime();
   });
 
   for (const capture of queue) {
@@ -1923,8 +1965,9 @@ async function rescheduleCaptures(args: {
       const prevSnapshot = snapshotFromRow(capture);
       const resolvedDeadline = plan.deadline ?? resolveDeadlineFromCapture(capture, offsetMinutes);
       const usedPreferred = slotMatchesTarget(slot, plan.preferredSlot ?? null);
-      const usedStartTolerance =
-        plan.mode === "start" && plan.preferredSlot && !usedPreferred;
+      const usedStartTolerance = Boolean(
+        plan.mode === "start" && plan.preferredSlot && !usedPreferred,
+      );
       const explanation = buildScheduleExplanation({
         plan,
         slot,
@@ -2764,3 +2807,5 @@ function json(data: unknown, status = 200) {
 export const __test__ = {
   createGoogleCalendarActions,
 };
+
+export { ScheduleError, priorityForCapture };

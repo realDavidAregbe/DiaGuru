@@ -33,9 +33,6 @@ async function runCleanup() {
         let needsUpdate = false;
         const updates = {};
 
-        const isSleep = capture.task_type_hint === 'routine.sleep' || capture.extraction_kind === 'routine.sleep';
-        const isMeal = capture.task_type_hint === 'routine.meal' || capture.extraction_kind === 'routine.meal';
-
         // Logic to detect if it needs normalization
         // For sleep: if it's scheduled during the day (e.g. 08:00 to 20:00)
         // For meal: if it's missing a window or at an odd time
