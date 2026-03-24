@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { requestNotificationPermission, scheduleIn, sendLocal } from '../../lib/notifications';
 import type { ParseMode } from '@/lib/capture';
 import { getAssistantModePreference, setAssistantModePreference } from '@/lib/preferences';
 
 export default function SettingsScreen() {
-  const router = useRouter();
   const [status, setStatus] = useState<'unknown' | 'granted' | 'denied'>('unknown');
   const [assistantMode, setAssistantMode] = useState<ParseMode>('conversational_strict');
   const [modeLoading, setModeLoading] = useState(true);
@@ -70,13 +68,6 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Developer</Text>
-        <Text style={styles.sectionSubtitle}>Temporary tools for integration testing.</Text>
-        <View style={{ gap: 12 }}>
-          <Button title="Open DeepSeek Tester" onPress={() => router.push('/test-deepseek')} />
-        </View>
-      </View>
     </View>
   );
 }

@@ -15,7 +15,7 @@
         "--config",
         "${workspaceFolder}/supabase/functions/deno.json"
       ],
-      "program": "${workspaceFolder}/supabase/functions/schedule-capture/index.test.ts",
+      "program": "${workspaceFolder}/supabase/functions/schedule-capture/live-pipeline.testcapture.ts",
       "attachSimplePort": 9230,
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",

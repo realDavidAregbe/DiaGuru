@@ -2393,6 +2393,29 @@ async function deleteCalendarEvent(
   }
 }
 
+function normalizeCalendarSummaryText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const flattened = value.replace(/\s+/g, " ").trim();
+  return flattened.length > 0 ? flattened : null;
+}
+
+function resolveCaptureSummaryText(capture: CaptureEntryRow): string {
+  const extractionJson = capture.extraction_json;
+  const extractionTitle =
+    extractionJson &&
+    typeof extractionJson === "object" &&
+    !Array.isArray(extractionJson)
+      ? normalizeCalendarSummaryText(
+          (extractionJson as Record<string, unknown>).title,
+        )
+      : null;
+  return (
+    extractionTitle ??
+    normalizeCalendarSummaryText(capture.content) ??
+    "Capture"
+  );
+}
+
 async function createCalendarEvent(
   accessToken: string,
   params: {
@@ -2405,7 +2428,7 @@ async function createCalendarEvent(
   },
 ) {
   const { capture, slot, planId, actionId, priorityScore } = params;
-  const summary = `[DG] ${capture.content}`.slice(0, 200);
+  const summary = `[DG] ${resolveCaptureSummaryText(capture)}`.slice(0, 200);
   const privateProps: Record<string, string> = {
     diaGuru: "true",
     capture_id: capture.id,

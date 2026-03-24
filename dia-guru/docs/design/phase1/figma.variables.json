@@ -1,0 +1,185 @@
+{
+  "meta": {
+    "project": "DiaGuru",
+    "phase": "Phase 1 iOS-first redesign",
+    "baseFrame": "390x844"
+  },
+  "color": {
+    "primary": {
+      "50": "#EFF6FF",
+      "100": "#DBEAFE",
+      "200": "#BFDBFE",
+      "300": "#93C5FD",
+      "400": "#60A5FA",
+      "500": "#3B82F6",
+      "600": "#2563EB",
+      "700": "#1D4ED8",
+      "800": "#1E40AF",
+      "900": "#1E3A8A"
+    },
+    "neutral": {
+      "0": "#FFFFFF",
+      "50": "#F9FAFB",
+      "100": "#F3F4F6",
+      "200": "#E5E7EB",
+      "300": "#D1D5DB",
+      "400": "#9CA3AF",
+      "500": "#6B7280",
+      "600": "#4B5563",
+      "700": "#374151",
+      "800": "#1F2937",
+      "900": "#111827"
+    },
+    "semantic": {
+      "success50": "#ECFDF5",
+      "success600": "#059669",
+      "warning50": "#FEF3C7",
+      "warning700": "#B45309",
+      "error50": "#FEE2E2",
+      "error700": "#B91C1C",
+      "info50": "#EEF2FF",
+      "info700": "#4338CA"
+    },
+    "usage": {
+      "bgCanvas": "{color.neutral.100}",
+      "bgSurface": "{color.neutral.0}",
+      "bgMuted": "{color.neutral.50}",
+      "textPrimary": "{color.neutral.900}",
+      "textSecondary": "{color.neutral.600}",
+      "textMuted": "{color.neutral.500}",
+      "textOnPrimary": "{color.neutral.0}",
+      "borderSubtle": "{color.neutral.200}",
+      "borderStrong": "{color.neutral.300}",
+      "actionPrimary": "{color.primary.600}",
+      "actionPrimaryPressed": "{color.primary.700}",
+      "actionSecondaryText": "{color.primary.600}",
+      "statusErrorBG": "{color.semantic.error50}",
+      "statusErrorText": "{color.semantic.error700}",
+      "statusWarningBG": "{color.semantic.warning50}",
+      "statusWarningText": "{color.semantic.warning700}"
+    }
+  },
+  "typography": {
+    "fontFamily": {
+      "heading": "Sora",
+      "body": "Source Sans 3"
+    },
+    "styles": {
+      "display": {
+        "fontFamily": "{typography.fontFamily.heading}",
+        "fontWeight": 700,
+        "fontSize": 32,
+        "lineHeight": 38
+      },
+      "h1": {
+        "fontFamily": "{typography.fontFamily.heading}",
+        "fontWeight": 700,
+        "fontSize": 28,
+        "lineHeight": 34
+      },
+      "h2": {
+        "fontFamily": "{typography.fontFamily.heading}",
+        "fontWeight": 700,
+        "fontSize": 24,
+        "lineHeight": 30
+      },
+      "section": {
+        "fontFamily": "{typography.fontFamily.body}",
+        "fontWeight": 700,
+        "fontSize": 20,
+        "lineHeight": 26
+      },
+      "cardTitle": {
+        "fontFamily": "{typography.fontFamily.body}",
+        "fontWeight": 600,
+        "fontSize": 16,
+        "lineHeight": 22
+      },
+      "body": {
+        "fontFamily": "{typography.fontFamily.body}",
+        "fontWeight": 400,
+        "fontSize": 16,
+        "lineHeight": 24
+      },
+      "bodyStrong": {
+        "fontFamily": "{typography.fontFamily.body}",
+        "fontWeight": 600,
+        "fontSize": 16,
+        "lineHeight": 24
+      },
+      "meta": {
+        "fontFamily": "{typography.fontFamily.body}",
+        "fontWeight": 400,
+        "fontSize": 14,
+        "lineHeight": 20
+      },
+      "caption": {
+        "fontFamily": "{typography.fontFamily.body}",
+        "fontWeight": 400,
+        "fontSize": 12,
+        "lineHeight": 16
+      },
+      "button": {
+        "fontFamily": "{typography.fontFamily.body}",
+        "fontWeight": 700,
+        "fontSize": 16,
+        "lineHeight": 20
+      }
+    }
+  },
+  "spacing": {
+    "0": 0,
+    "1": 4,
+    "2": 8,
+    "3": 12,
+    "4": 16,
+    "5": 20,
+    "6": 24,
+    "8": 32,
+    "10": 40
+  },
+  "radius": {
+    "xs": 8,
+    "sm": 10,
+    "md": 12,
+    "lg": 16,
+    "xl": 20,
+    "pill": 999
+  },
+  "elevation": {
+    "shadow01": {
+      "x": 0,
+      "y": 1,
+      "blur": 2,
+      "spread": 0,
+      "color": "rgba(17,24,39,0.08)"
+    },
+    "shadow02": {
+      "x": 0,
+      "y": 4,
+      "blur": 12,
+      "spread": 0,
+      "color": "rgba(17,24,39,0.10)"
+    },
+    "shadow03": {
+      "x": 0,
+      "y": 8,
+      "blur": 20,
+      "spread": 0,
+      "color": "rgba(17,24,39,0.12)"
+    }
+  },
+  "motion": {
+    "durationFastMs": 160,
+    "durationBaseMs": 220,
+    "durationSlowMs": 320,
+    "easingStandard": "ease-out",
+    "easingEmphasized": "cubic-bezier(0.2, 0.8, 0.2, 1)"
+  },
+  "accessibility": {
+    "minTapTarget": 44,
+    "normalTextContrastMin": 4.5,
+    "largeTextContrastMin": 3.0
+  }
+}
+

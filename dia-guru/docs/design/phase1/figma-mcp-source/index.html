@@ -1,0 +1,987 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DiaGuru Phase 1 iOS Concept v2</title>
+    <script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&display=swap");
+
+      :root {
+        --ink-900: #0a1222;
+        --ink-800: #13203a;
+        --ink-700: #1f355f;
+        --ink-400: #6f7d98;
+        --ink-300: #9aa8c2;
+        --ink-200: #c9d4e8;
+        --ink-100: #eaf0fb;
+        --white: #ffffff;
+
+        --blue-700: #0f54d8;
+        --blue-600: #1971f3;
+        --blue-500: #3594ff;
+        --blue-100: #dcedff;
+
+        --mint-600: #149f8b;
+        --mint-100: #dffaf4;
+        --amber-600: #bb7a00;
+        --amber-100: #fff2d1;
+        --rose-600: #ba3f56;
+        --rose-100: #ffe4ea;
+
+        --radius-xl: 30px;
+        --radius-lg: 22px;
+        --radius-md: 16px;
+        --radius-sm: 12px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Public Sans", "Segoe UI", sans-serif;
+        color: var(--ink-900);
+        background:
+          radial-gradient(circle at 10% -10%, #d8ebff 0%, transparent 45%),
+          radial-gradient(circle at 100% 20%, #c8e3ff 0%, transparent 38%),
+          linear-gradient(180deg, #f5f9ff 0%, #eef4fb 44%, #ecf1f7 100%);
+      }
+
+      .canvas {
+        padding: 34px;
+      }
+
+      .hero {
+        max-width: 1060px;
+        margin: 0 auto 26px;
+        border-radius: 28px;
+        padding: 26px 28px;
+        color: #eaf3ff;
+        background:
+          radial-gradient(circle at 90% 18%, rgba(89, 175, 255, 0.42) 0%, transparent 34%),
+          linear-gradient(140deg, #081428 0%, #0f2b58 48%, #1159c5 100%);
+        box-shadow:
+          0 24px 44px rgba(19, 35, 67, 0.3),
+          inset 0 1px 0 rgba(255, 255, 255, 0.18);
+      }
+
+      .hero h1 {
+        margin: 0;
+        font-family: "Outfit", "Segoe UI", sans-serif;
+        font-size: 34px;
+        line-height: 40px;
+        letter-spacing: 0.1px;
+      }
+
+      .hero p {
+        margin: 10px 0 0;
+        max-width: 760px;
+        font-size: 15px;
+        color: #c6dbff;
+      }
+
+      .grid {
+        max-width: 1060px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(2, 390px);
+        gap: 22px;
+        justify-content: center;
+      }
+
+      .device {
+        position: relative;
+        width: 390px;
+        height: 844px;
+        border-radius: 40px;
+        overflow: hidden;
+        border: 1px solid #cfdbef;
+        background:
+          radial-gradient(circle at 100% 0%, #deecff 0%, transparent 40%),
+          linear-gradient(180deg, #f6faff 0%, #f0f5fd 60%, #ebf1fb 100%);
+        box-shadow:
+          0 28px 56px rgba(17, 35, 63, 0.2),
+          0 7px 18px rgba(17, 35, 63, 0.16);
+      }
+
+      .label {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        z-index: 3;
+        border-radius: 999px;
+        padding: 5px 10px;
+        font-size: 10px;
+        letter-spacing: 0.6px;
+        font-weight: 700;
+        color: #d8e8ff;
+        background: rgba(8, 22, 45, 0.9);
+      }
+
+      .status {
+        height: 54px;
+        padding: 0 22px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: #405272;
+        font-size: 12px;
+        letter-spacing: 0.3px;
+      }
+
+      .status-right {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: #5d6f8f;
+      }
+
+      .screen {
+        height: calc(100% - 54px);
+        padding: 14px 16px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .topline {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .kicker {
+        font-size: 12px;
+        letter-spacing: 0.45px;
+        text-transform: uppercase;
+        color: #4f6488;
+        font-weight: 700;
+      }
+
+      .avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 999px;
+        border: 1px solid #c7d6f0;
+        background: linear-gradient(135deg, #0f54d8, #38a2ff);
+        color: #fff;
+        font-size: 12px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .panel {
+        border-radius: var(--radius-lg);
+        background: var(--white);
+        border: 1px solid #d3def0;
+        padding: 14px;
+        box-shadow: 0 7px 20px rgba(20, 39, 70, 0.08);
+      }
+
+      .hero-card {
+        border-radius: 24px;
+        padding: 16px;
+        color: #ebf4ff;
+        background:
+          radial-gradient(circle at 82% 18%, rgba(95, 186, 255, 0.45) 0%, transparent 34%),
+          linear-gradient(135deg, #092049 0%, #0c4195 58%, #1c7ef4 100%);
+        box-shadow: 0 14px 30px rgba(8, 36, 84, 0.34);
+      }
+
+      .hero-card h2,
+      .modal h3,
+      .section-title {
+        margin: 0;
+        font-family: "Outfit", "Segoe UI", sans-serif;
+        letter-spacing: 0.1px;
+      }
+
+      .hero-card h2 {
+        font-size: 23px;
+        line-height: 29px;
+      }
+
+      .sub {
+        margin-top: 5px;
+        font-size: 13px;
+        color: #cde3ff;
+      }
+
+      .metrics {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 10px;
+      }
+
+      .metric {
+        border-radius: 14px;
+        padding: 10px 11px;
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.24);
+      }
+
+      .metric .big {
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .metric .tiny {
+        margin-top: 3px;
+        font-size: 11px;
+        color: #cfe1ff;
+      }
+
+      .row {
+        display: flex;
+        gap: 9px;
+      }
+
+      .row > * {
+        flex: 1;
+      }
+
+      .heading {
+        margin: 0;
+        font-family: "Outfit", "Segoe UI", sans-serif;
+        font-size: 19px;
+        line-height: 24px;
+      }
+
+      .muted {
+        color: #60718f;
+        font-size: 13px;
+        line-height: 18px;
+      }
+
+      .field {
+        border-radius: var(--radius-sm);
+        border: 1px solid #cfdbef;
+        background: #f8fbff;
+        padding: 11px 12px;
+        color: #30415d;
+        font-size: 13px;
+      }
+
+      .chips {
+        display: flex;
+        gap: 7px;
+      }
+
+      .chip {
+        border-radius: 999px;
+        padding: 7px 10px;
+        border: 1px solid #cad7ec;
+        background: #f7fbff;
+        font-size: 11px;
+        color: #4c5e7e;
+        font-weight: 600;
+      }
+
+      .chip.active {
+        color: #fff;
+        border-color: #0f54d8;
+        background: linear-gradient(135deg, #0f54d8, #2b92ff);
+      }
+
+      .btn {
+        border: 0;
+        border-radius: 12px;
+        padding: 11px 12px;
+        text-align: center;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .btn.primary {
+        color: #fff;
+        background: linear-gradient(135deg, #0f54d8, #2a91ff);
+        box-shadow: 0 8px 18px rgba(20, 74, 175, 0.28);
+      }
+
+      .btn.secondary {
+        color: #1e4ea7;
+        border: 1px solid #b6c9ea;
+        background: #f8fbff;
+      }
+
+      .queue-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .queue-item {
+        border: 1px solid #d2def0;
+        border-radius: 12px;
+        background: #f9fcff;
+        padding: 10px;
+      }
+
+      .queue-meta {
+        margin-top: 2px;
+        color: #60718f;
+        font-size: 11px;
+      }
+
+      .timeline {
+        margin-top: 10px;
+        border-left: 2px solid #c6d7f1;
+        padding-left: 10px;
+        display: grid;
+        gap: 8px;
+      }
+
+      .time-block {
+        border: 1px solid #d2def0;
+        border-radius: 12px;
+        padding: 10px;
+        background: #fff;
+      }
+
+      .time {
+        color: #1d4d9d;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .top-badge {
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .alert {
+        border-radius: 13px;
+        padding: 11px 12px;
+        font-size: 12px;
+        border: 1px solid;
+      }
+
+      .alert.warning {
+        border-color: #f2ce78;
+        color: #8e5f00;
+        background: var(--amber-100);
+      }
+
+      .alert.error {
+        border-color: #f1afbe;
+        color: #96273e;
+        background: var(--rose-100);
+      }
+
+      .event {
+        border: 1px solid #d1deef;
+        border-radius: 13px;
+        background: #fff;
+        padding: 11px;
+      }
+
+      .event-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #1f2f4d;
+      }
+
+      .dg {
+        display: inline-block;
+        margin-top: 6px;
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-size: 10px;
+        color: #fff;
+        background: linear-gradient(135deg, #0f54d8, #2d94ff);
+      }
+
+      .profile-head {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .profile-avatar {
+        width: 56px;
+        height: 56px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #0f54d8, #30a0ff);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+      }
+
+      .setting-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .switch {
+        width: 42px;
+        height: 24px;
+        border-radius: 999px;
+        background: #d8e1f0;
+        position: relative;
+      }
+
+      .switch.on {
+        background: #2a87ff;
+      }
+
+      .switch::after {
+        content: "";
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        background: #fff;
+        position: absolute;
+        left: 3px;
+        top: 3px;
+      }
+
+      .switch.on::after {
+        left: 21px;
+      }
+
+      .tabbar {
+        margin-top: auto;
+        border-radius: 18px;
+        border: 1px solid #d0dcef;
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(6px);
+        padding: 9px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4px;
+        text-align: center;
+        font-size: 10px;
+        color: #67809f;
+      }
+
+      .tabbar .active {
+        border-radius: 11px;
+        padding: 7px 4px;
+        color: #fff;
+        font-weight: 700;
+        background: linear-gradient(135deg, #1157dc, #2f97ff);
+      }
+
+      .quick {
+        position: absolute;
+        right: 18px;
+        bottom: 88px;
+        width: 58px;
+        height: 58px;
+        border-radius: 18px;
+        font-size: 30px;
+        line-height: 56px;
+        text-align: center;
+        color: #fff;
+        background: linear-gradient(135deg, #0f54d8, #2f9cff);
+        box-shadow: 0 14px 24px rgba(20, 74, 175, 0.35);
+      }
+
+      .overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: flex-end;
+        padding: 14px;
+        background: rgba(7, 17, 35, 0.48);
+      }
+
+      .modal {
+        width: 100%;
+        border-radius: 20px;
+        border: 1px solid #cfdcf0;
+        background: #fff;
+        box-shadow: 0 20px 34px rgba(16, 35, 63, 0.28);
+        padding: 14px;
+      }
+
+      .modal h3 {
+        font-size: 21px;
+      }
+
+      .decision {
+        margin-top: 10px;
+        display: grid;
+        gap: 8px;
+      }
+
+      .decision-item {
+        border: 1px solid #cfdbef;
+        border-radius: 13px;
+        padding: 10px;
+        background: #f8fbff;
+      }
+
+      .decision-title {
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .live-widgets {
+        max-width: 1060px;
+        margin: 24px auto 0;
+        display: grid;
+        grid-template-columns: repeat(2, auto);
+        gap: 18px;
+        justify-content: center;
+      }
+
+      .live {
+        width: 393px;
+        height: 188px;
+        border-radius: 30px;
+        padding: 16px;
+        color: #deebff;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background:
+          radial-gradient(circle at 84% 20%, rgba(80, 178, 255, 0.5) 0%, transparent 34%),
+          linear-gradient(145deg, #0a1b36 0%, #114796 62%, #1e7cf1 100%);
+      }
+
+      .live .title {
+        font-family: "Outfit", "Segoe UI", sans-serif;
+        font-size: 18px;
+        margin: 0;
+      }
+
+      .progress {
+        margin-top: 10px;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.22);
+        overflow: hidden;
+      }
+
+      .progress > i {
+        display: block;
+        width: 64%;
+        height: 100%;
+        background: linear-gradient(90deg, #4bc6fe, #b7f1ff);
+      }
+
+      .actions {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .action {
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        text-align: center;
+        padding: 8px;
+        font-size: 11px;
+      }
+
+      .widget-small {
+        width: 158px;
+        height: 158px;
+        border-radius: 26px;
+        padding: 14px;
+        color: #e9f4ff;
+        background:
+          radial-gradient(circle at 80% 18%, rgba(90, 191, 255, 0.42) 0%, transparent 36%),
+          linear-gradient(145deg, #0b234a, #1362d8);
+      }
+
+      .widget-medium {
+        width: 338px;
+        height: 158px;
+        border-radius: 26px;
+        padding: 14px;
+        color: #e9f4ff;
+        background:
+          radial-gradient(circle at 90% 20%, rgba(99, 186, 255, 0.4) 0%, transparent 34%),
+          linear-gradient(145deg, #0a213f, #0f4ba4 55%, #1e82f6);
+      }
+
+      .capture-plus {
+        margin-top: 18px;
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.42);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 32px;
+        line-height: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="canvas">
+      <section class="hero">
+        <h1>DiaGuru iOS Concept v2</h1>
+        <p>
+          Rebuilt visual direction with stronger hierarchy: capture-first home flow, conflict decisions as clear
+          cards, check-in emphasis, and native-feeling Live Activity and widget surfaces.
+        </p>
+      </section>
+
+      <section class="grid">
+        <article class="device">
+          <div class="label">AUTH-01</div>
+          <div class="status">
+            <div>9:41</div>
+            <div class="status-right">
+              <div class="dot"></div>
+              <div class="dot"></div>
+              <div class="dot"></div>
+            </div>
+          </div>
+          <div class="screen">
+            <div class="hero-card">
+              <h2>Plan with intention. Execute with calm.</h2>
+              <div class="sub">DiaGuru adapts your day around classes, deadlines, and real calendar friction.</div>
+            </div>
+            <div class="panel">
+              <p class="heading">Welcome back</p>
+              <div class="muted">Sign in to continue your adaptive schedule.</div>
+              <div class="field" style="margin-top:10px;">Email</div>
+              <div class="field" style="margin-top:8px;">Password</div>
+              <div class="btn primary" style="margin-top:10px;">Sign in</div>
+              <div class="row" style="margin-top:8px;">
+                <div class="btn secondary">Create account</div>
+                <div class="btn secondary">Use magic link</div>
+              </div>
+            </div>
+            <div class="panel" style="background:#f6fbff;">
+              <div class="kicker">Trust signals</div>
+              <div class="muted" style="margin-top:6px;">Calendar permissions can be revoked anytime. DiaGuru never edits non-DG events.</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="device">
+          <div class="label">HOME-01</div>
+          <div class="status">
+            <div>9:41</div>
+            <div class="status-right">
+              <div class="dot"></div>
+              <div class="dot"></div>
+              <div class="dot"></div>
+            </div>
+          </div>
+          <div class="screen">
+            <div class="topline">
+              <div class="kicker">Today atlas</div>
+              <div class="avatar">DA</div>
+            </div>
+            <div class="hero-card">
+              <h2>Friday focus map</h2>
+              <div class="sub">2 check-ins done, 1 overdue, 18m open slot before class.</div>
+              <div class="metrics">
+                <div class="metric">
+                  <div class="big">68%</div>
+                  <div class="tiny">day completion</div>
+                </div>
+                <div class="metric">
+                  <div class="big">3</div>
+                  <div class="tiny">queue waiting</div>
+                </div>
+              </div>
+            </div>
+            <div class="alert warning">Calendar reconnect needed. Auto-scheduling remains paused until Google re-auth.</div>
+            <div class="panel">
+              <p class="section-title" style="font-size:18px;">Quick capture</p>
+              <div class="field" style="margin-top:8px;">Review bio assignment and prepare 4 flashcards.</div>
+              <div class="row" style="margin-top:8px;">
+                <div class="field">45 min</div>
+                <div class="chips">
+                  <span class="chip">Low</span>
+                  <span class="chip active">Medium</span>
+                  <span class="chip">High</span>
+                </div>
+              </div>
+              <div class="btn primary" style="margin-top:8px;">Save and auto-schedule</div>
+            </div>
+            <div class="panel">
+              <div class="row" style="justify-content:space-between;align-items:center;">
+                <p class="section-title" style="font-size:16px;">Queue</p>
+                <span class="top-badge" style="background:#dffaf4;color:#177f70;">ranked</span>
+              </div>
+              <div class="queue-list">
+                <div class="queue-item"><strong>#1 Quiz reflection draft</strong><div class="queue-meta">~35 min  |  high urgency</div></div>
+                <div class="queue-item"><strong>#2 Submit internship form</strong><div class="queue-meta">~20 min  |  due today</div></div>
+              </div>
+            </div>
+            <div class="tabbar">
+              <div class="active">Home</div>
+              <div>Calendar</div>
+              <div>Profile</div>
+              <div>Settings</div>
+            </div>
+          </div>
+          <div class="quick">+</div>
+        </article>
+
+        <article class="device">
+          <div class="label">CAL-01</div>
+          <div class="status">
+            <div>9:41</div>
+            <div class="status-right">
+              <div class="dot"></div>
+              <div class="dot"></div>
+              <div class="dot"></div>
+            </div>
+          </div>
+          <div class="screen">
+            <div class="topline">
+              <div>
+                <div class="kicker">Calendar</div>
+                <h2 class="heading" style="margin-top:2px;">Upcoming 20 events</h2>
+              </div>
+              <div class="top-badge" style="background:#dffaf4;color:#177f70;">Synced</div>
+            </div>
+            <div class="panel" style="padding:10px 12px;">
+              <div class="muted">DG sessions are tagged and only those can be rescheduled from DiaGuru.</div>
+            </div>
+            <div class="event">
+              <div class="event-title">[DG] Physics problem set sprint</div>
+              <div class="muted">Feb 27, 3:00 PM -> 3:50 PM</div>
+              <span class="dg">DiaGuru session</span>
+            </div>
+            <div class="event">
+              <div class="event-title">Team standup</div>
+              <div class="muted">Feb 27, 4:30 PM -> 5:00 PM</div>
+            </div>
+            <div class="event">
+              <div class="event-title">[DG] Reflection writing block</div>
+              <div class="muted">Feb 27, 8:10 PM -> 8:40 PM</div>
+              <span class="dg">DiaGuru session</span>
+            </div>
+            <div class="panel">
+              <div class="kicker">Empty state reference</div>
+              <div class="muted" style="margin-top:4px;">Nothing scheduled in next few days -> show "Capture now" CTA and calendar connect hint.</div>
+            </div>
+            <div class="tabbar">
+              <div>Home</div>
+              <div class="active">Calendar</div>
+              <div>Profile</div>
+              <div>Settings</div>
+            </div>
+          </div>
+          <div class="quick">+</div>
+        </article>
+
+        <article class="device">
+          <div class="label">PROF-01</div>
+          <div class="status">
+            <div>9:41</div>
+            <div class="status-right">
+              <div class="dot"></div>
+              <div class="dot"></div>
+              <div class="dot"></div>
+            </div>
+          </div>
+          <div class="screen">
+            <div class="profile-head">
+              <div class="profile-avatar">DA</div>
+              <div>
+                <div class="heading" style="font-size:20px;">David Aregbe</div>
+                <div class="muted">aregbedavid24@gmail.com</div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="kicker">Account</div>
+              <div class="field" style="margin-top:8px;">Username: David Aregbe</div>
+              <div class="field" style="margin-top:8px;">Website: diaguru.app</div>
+              <div class="btn primary" style="margin-top:8px;">Update profile</div>
+            </div>
+            <div class="panel">
+              <div class="row" style="justify-content:space-between;align-items:center;">
+                <div>
+                  <div class="heading" style="font-size:17px;">Google Calendar</div>
+                  <div class="muted">Linked  |  health check passed 2m ago</div>
+                </div>
+                <span class="top-badge" style="background:#dffaf4;color:#177f70;">Linked</span>
+              </div>
+              <div class="row" style="margin-top:8px;">
+                <div class="btn secondary">Refresh</div>
+                <div class="btn secondary">Reconnect</div>
+              </div>
+            </div>
+            <div class="alert error">Error state variant: token refresh failed -> show reconnect as primary action.</div>
+            <div class="btn secondary">Sign out</div>
+            <div class="tabbar">
+              <div>Home</div>
+              <div>Calendar</div>
+              <div class="active">Profile</div>
+              <div>Settings</div>
+            </div>
+          </div>
+          <div class="quick">+</div>
+        </article>
+
+        <article class="device">
+          <div class="label">SET-01</div>
+          <div class="status">
+            <div>9:41</div>
+            <div class="status-right">
+              <div class="dot"></div>
+              <div class="dot"></div>
+              <div class="dot"></div>
+            </div>
+          </div>
+          <div class="screen">
+            <div>
+              <div class="kicker">Settings</div>
+              <h2 class="heading" style="margin-top:3px;">Automation controls</h2>
+            </div>
+            <div class="panel">
+              <div class="setting-row">
+                <div>
+                  <strong>Assistant mode</strong>
+                  <div class="muted">Conversational strict (DeepSeek follow-up)</div>
+                </div>
+                <div class="top-badge" style="background:#dcedff;color:#1f5ec5;">Strict</div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="setting-row">
+                <div>
+                  <strong>Live reminders</strong>
+                  <div class="muted">Permission granted, test available</div>
+                </div>
+                <div class="switch on"></div>
+              </div>
+              <div class="row" style="margin-top:8px;">
+                <div class="btn secondary">Send test</div>
+                <div class="btn secondary">Schedule in 5s</div>
+              </div>
+            </div>
+            <div class="panel">
+              <strong>Developer utilities</strong>
+              <div class="btn secondary" style="margin-top:8px;">Open DeepSeek tester</div>
+              <div class="muted" style="margin-top:8px;">Include status chips for denied/checking/error notification states.</div>
+            </div>
+            <div class="tabbar">
+              <div>Home</div>
+              <div>Calendar</div>
+              <div>Profile</div>
+              <div class="active">Settings</div>
+            </div>
+          </div>
+          <div class="quick">+</div>
+        </article>
+
+        <article class="device">
+          <div class="label">HOME-CONFLICT-01</div>
+          <div class="status">
+            <div>9:41</div>
+            <div class="status-right">
+              <div class="dot"></div>
+              <div class="dot"></div>
+              <div class="dot"></div>
+            </div>
+          </div>
+          <div class="screen">
+            <div class="hero-card">
+              <h2>No clean slot at requested time</h2>
+              <div class="sub">Requested 6:00 PM overlaps two events. Pick your intent.</div>
+            </div>
+            <div class="panel">
+              <p class="heading" style="font-size:16px;">Suggested next slot</p>
+              <div class="muted">7:30 PM -> 8:15 PM (45m) keeps all existing commitments.</div>
+            </div>
+            <div class="overlay">
+              <div class="modal">
+                <h3>Resolve conflict</h3>
+                <div class="muted" style="margin-top:6px;">Choose how aggressive the scheduler should be for this task.</div>
+                <div class="decision">
+                  <div class="decision-item"><div class="decision-title">Overlap anyway</div><div class="muted">Keep requested slot and allow overlap.</div></div>
+                  <div class="decision-item"><div class="decision-title">Make room</div><div class="muted">Rebalance nearby DG sessions.</div></div>
+                  <div class="decision-item"><div class="decision-title">Let DiaGuru decide</div><div class="muted">Apply best tradeoff automatically.</div></div>
+                  <div class="decision-item"><div class="decision-title">Cancel</div><div class="muted">Return to editing without scheduling.</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="device">
+          <div class="label">HOME-FOLLOWUP-01</div>
+          <div class="status">
+            <div>9:41</div>
+            <div class="status-right">
+              <div class="dot"></div>
+              <div class="dot"></div>
+              <div class="dot"></div>
+            </div>
+          </div>
+          <div class="screen">
+            <div class="hero-card">
+              <h2>Capture pending detail</h2>
+              <div class="sub">Your request needs one follow-up before scheduling.</div>
+            </div>
+            <div class="panel">
+              <div class="muted">User input: "work on biology notes tonight"</div>
+            </div>
+            <div class="overlay">
+              <div class="modal">
+                <h3>DeepSeek asks</h3>
+                <div class="muted" style="margin-top:6px;">How long should this session be?</div>
+                <div class="row" style="margin-top:10px;">
+                  <div class="chip">25m</div>
+                  <div class="chip active">45m</div>
+                  <div class="chip">60m</div>
+                </div>
+                <div class="field" style="margin-top:10px;">45</div>
+                <div class="row" style="margin-top:10px;">
+                  <div class="btn secondary">Cancel</div>
+                  <div class="btn primary">Send & schedule</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="live-widgets">
+        <article class="live">
+          <p class="title">Live Activity • In progress</p>
+          <div style="margin-top:8px;font-size:14px;">Physics problem set sprint</div>
+          <div style="margin-top:4px;font-size:12px;color:#c6ddff;">3:00 PM -> 3:50 PM  •  18 min remaining</div>
+          <div class="progress"><i></i></div>
+          <div class="actions">
+            <div class="action">Complete</div>
+            <div class="action">Reschedule</div>
+          </div>
+        </article>
+
+        <article class="widget-small">
+          <div style="font-family:'Outfit',sans-serif;font-size:18px;">Quick Capture</div>
+          <div style="margin-top:8px;font-size:12px;color:#cae1ff;">One tap opens focused input.</div>
+          <div class="capture-plus">+</div>
+        </article>
+
+        <article class="widget-medium">
+          <div style="font-family:'Outfit',sans-serif;font-size:18px;">Capture from widget</div>
+          <div style="margin-top:10px;font-size:12px;color:#c8e0ff;">Next DG: Reflection writing at 8:10 PM</div>
+          <div style="margin-top:8px;font-size:12px;color:#c8e0ff;">Queue waiting: 3 items</div>
+          <div style="margin-top:12px;display:inline-block;border:1px solid rgba(255,255,255,0.4);border-radius:999px;padding:6px 10px;font-size:11px;">Open quick-add</div>
+        </article>
+      </section>
+    </div>
+  </body>
+</html>
