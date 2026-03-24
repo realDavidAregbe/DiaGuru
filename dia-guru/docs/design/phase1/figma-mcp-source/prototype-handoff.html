@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DiaGuru Prototypes + Handoff v2</title>
+    <script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&display=swap");
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Public Sans", "Segoe UI", sans-serif;
+        color: #0a1222;
+        background:
+          radial-gradient(circle at 12% -14%, #d9ecff 0%, transparent 42%),
+          radial-gradient(circle at 88% 0%, #cde5ff 0%, transparent 40%),
+          linear-gradient(180deg, #f5f9ff 0%, #ecf2fa 60%, #e9eff8 100%);
+      }
+
+      .wrap {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 30px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .hero {
+        border-radius: 28px;
+        padding: 24px 26px;
+        color: #e5f1ff;
+        background:
+          radial-gradient(circle at 88% 18%, rgba(86, 181, 255, 0.45) 0%, transparent 34%),
+          linear-gradient(142deg, #081428 0%, #0f2f66 54%, #1564d8 100%);
+        box-shadow: 0 24px 44px rgba(17, 35, 67, 0.28);
+      }
+
+      .hero h1 {
+        margin: 0;
+        font-family: "Outfit", "Segoe UI", sans-serif;
+        font-size: 34px;
+        line-height: 40px;
+      }
+
+      .hero p {
+        margin: 10px 0 0;
+        color: #c5dcff;
+        max-width: 760px;
+        font-size: 15px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .card {
+        border-radius: 20px;
+        border: 1px solid #d0dced;
+        background: #fff;
+        padding: 15px;
+        box-shadow: 0 6px 18px rgba(18, 40, 71, 0.07);
+      }
+
+      .title {
+        margin: 0 0 8px;
+        font-family: "Outfit", "Segoe UI", sans-serif;
+        font-size: 22px;
+      }
+
+      .sub {
+        margin: 0;
+        color: #60718f;
+        font-size: 13px;
+      }
+
+      .flow-list {
+        margin-top: 10px;
+        display: grid;
+        gap: 8px;
+      }
+
+      .flow {
+        border-radius: 12px;
+        border: 1px solid #cfdcf0;
+        background: #f8fbff;
+        padding: 10px;
+      }
+
+      .flow strong {
+        font-size: 13px;
+      }
+
+      .flow .meta {
+        margin-top: 3px;
+        color: #5f718f;
+        font-size: 12px;
+      }
+
+      .tag-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+
+      .tag {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 5px 9px;
+        border: 1px solid #c8d7ec;
+        background: #f8fbff;
+        font-size: 11px;
+        color: #4f6284;
+        font-weight: 600;
+      }
+
+      .tag.good {
+        background: #dffaf4;
+        border-color: #b9ecdf;
+        color: #177f70;
+      }
+
+      .tag.warn {
+        background: #fff2d1;
+        border-color: #f3dda6;
+        color: #8e5f00;
+      }
+
+      .tag.error {
+        background: #ffe4ea;
+        border-color: #f2bfca;
+        color: #96273e;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        margin-top: 8px;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid #d8e2f2;
+        padding: 8px 6px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .code {
+        margin-top: 8px;
+        border-radius: 12px;
+        border: 1px solid #cfdcf0;
+        background: #0c1d39;
+        color: #d7e9ff;
+        padding: 11px;
+        font-family: Consolas, Menlo, monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="hero">
+        <h1>08 Prototypes + 09 Handoff Specs (v2)</h1>
+        <p>
+          Clickable flows are now centered on decisions and outcomes: capture, conflict handling, check-in completion,
+          and quick-entry from widgets/live activity.
+        </p>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <h2 class="title">Prototype Flow Map</h2>
+          <p class="sub">Primary click-through sequence for review and sign-off.</p>
+          <div class="flow-list">
+            <div class="flow">
+              <strong>1. First run -> Auth -> Home</strong>
+              <div class="meta">Sign-in success lands on Home hero + quick capture composer.</div>
+            </div>
+            <div class="flow">
+              <strong>2. Home quick capture -> auto-schedule success</strong>
+              <div class="meta">Includes queued/scheduled preview and refresh state.</div>
+            </div>
+            <div class="flow">
+              <strong>3. Home capture -> DeepSeek follow-up -> scheduled</strong>
+              <div class="meta">No duration input path, one clarifying question, then schedule.</div>
+            </div>
+            <div class="flow">
+              <strong>4. Conflict sheet decisions</strong>
+              <div class="meta">Overlap, make-room rebalance, auto-decide, cancel.</div>
+            </div>
+            <div class="flow">
+              <strong>5. Overdue check-in complete/reschedule</strong>
+              <div class="meta">Includes "Why this time?" explanation target.</div>
+            </div>
+            <div class="flow">
+              <strong>6. Widget tap -> quick capture sheet</strong>
+              <div class="meta">Source-tagged as widget and keyboard-focused on open.</div>
+            </div>
+            <div class="flow">
+              <strong>7. Live Activity tap -> check-in target</strong>
+              <div class="meta">Action routing to complete or reschedule path.</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2 class="title">Design QA Scenarios</h2>
+          <p class="sub">Use these states to validate complete visual/interaction coverage.</p>
+          <table>
+            <thead><tr><th>Scenario</th><th>State to Validate</th></tr></thead>
+            <tbody>
+              <tr><td>No captures + no calendar link</td><td>Home empty state + reconnect banner + global quick-add visible</td></tr>
+              <tr><td>Calendar linked but stale auth</td><td>Warning state with reconnect CTA and safe fallback behavior</td></tr>
+              <tr><td>Capture without minutes</td><td>DeepSeek follow-up modal appears with focused response input</td></tr>
+              <tr><td>Scheduling conflict</td><td>Decision sheet presents all 4 actions with explanation copy</td></tr>
+              <tr><td>Overdue scheduled task</td><td>Check-in panel shows Complete / Reschedule + Why explanation</td></tr>
+              <tr><td>Mixed DG + external events</td><td>Calendar list clearly badges DG-only events</td></tr>
+              <tr><td>Notification denied</td><td>Settings shows denied state and re-request action copy</td></tr>
+              <tr><td>Widget quick capture</td><td>One-tap entry goes to in-app capture with source context</td></tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="card">
+          <h2 class="title">Phase 2 Interface Contracts</h2>
+          <p class="sub">Public UI contracts to keep native work and app layer consistent.</p>
+          <div class="code">type LiveSessionState = {
+  captureId: string;
+  title: string;
+  plannedStart: string;
+  plannedEnd: string;
+  status: "not_started" | "in_progress" | "awaiting_check_in" | "completed";
+  progressPercent: number;
+  remainingMinutes: number;
+  canComplete: boolean;
+  canReschedule: boolean;
+};</div>
+          <div class="code">type QuickCaptureInput = {
+  source: "app_quick_add" | "widget" | "home_capture";
+  prefillText?: string;
+  estimatedMinutes?: number;
+  importance?: 1 | 2 | 3;
+};</div>
+        </article>
+
+        <article class="card">
+          <h2 class="title">Deep Links + Action Payloads</h2>
+          <div class="tag-row">
+            <span class="tag">diaguru://capture/new?source=widget</span>
+            <span class="tag">diaguru://capture/new?source=app_quick_add</span>
+            <span class="tag">diaguru://session/checkin?id={captureId}</span>
+          </div>
+          <div class="code">type LiveActivityActionPayload = {
+  captureId: string;
+  action: "complete" | "reschedule";
+};</div>
+          <div class="tag-row">
+            <span class="tag good">ActivityKit + WidgetKit required</span>
+            <span class="tag warn">Shared model bridge needed</span>
+            <span class="tag error">Fallback if notifications denied</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="card">
+        <h2 class="title">Acceptance Snapshot</h2>
+        <div class="tag-row">
+          <span class="tag good">iOS-first 390x844</span>
+          <span class="tag good">4-tab nav retained</span>
+          <span class="tag good">Global quick-add from all tabs</span>
+          <span class="tag good">Live Activity + widgets included</span>
+          <span class="tag good">WCAG AA baseline</span>
+          <span class="tag good">Student-focused hierarchy</span>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

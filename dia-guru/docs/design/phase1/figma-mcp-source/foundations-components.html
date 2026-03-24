@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DiaGuru Foundations + Components v2</title>
+    <script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Public+Sans:wght@400;500;600;700&display=swap");
+
+      :root {
+        --ink-900: #0a1222;
+        --ink-800: #13203a;
+        --ink-600: #324869;
+        --ink-400: #6f7d98;
+        --ink-300: #9aa8c2;
+        --ink-200: #c9d4e8;
+        --ink-100: #eaf0fb;
+        --white: #ffffff;
+
+        --blue-700: #0f54d8;
+        --blue-600: #1971f3;
+        --blue-500: #3594ff;
+        --blue-300: #99c8ff;
+        --blue-100: #dcedff;
+
+        --mint-600: #149f8b;
+        --mint-100: #dffaf4;
+        --amber-600: #bb7a00;
+        --amber-100: #fff2d1;
+        --rose-600: #ba3f56;
+        --rose-100: #ffe4ea;
+
+        --radius-xl: 28px;
+        --radius-lg: 22px;
+        --radius-md: 16px;
+        --radius-sm: 12px;
+
+        --space-1: 4px;
+        --space-2: 8px;
+        --space-3: 12px;
+        --space-4: 16px;
+        --space-5: 20px;
+        --space-6: 24px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Public Sans", "Segoe UI", sans-serif;
+        color: var(--ink-900);
+        background:
+          radial-gradient(circle at 10% -14%, #daecff 0%, transparent 42%),
+          radial-gradient(circle at 90% 0%, #cde5ff 0%, transparent 40%),
+          linear-gradient(180deg, #f4f8ff 0%, #ecf2fa 60%, #e9eff8 100%);
+      }
+
+      .page {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 30px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .hero {
+        border-radius: 28px;
+        padding: 24px 26px;
+        color: #e5f1ff;
+        background:
+          radial-gradient(circle at 86% 20%, rgba(85, 184, 255, 0.45) 0%, transparent 34%),
+          linear-gradient(142deg, #081428 0%, #0f2f66 54%, #1564d8 100%);
+        box-shadow: 0 24px 44px rgba(17, 35, 67, 0.28);
+      }
+
+      .hero h1 {
+        margin: 0;
+        font-family: "Outfit", "Segoe UI", sans-serif;
+        font-size: 34px;
+        line-height: 40px;
+      }
+
+      .hero p {
+        margin: 10px 0 0;
+        color: #c5dcff;
+        max-width: 780px;
+        font-size: 15px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .card {
+        border-radius: 20px;
+        border: 1px solid #d0dced;
+        background: #fff;
+        padding: 15px;
+        box-shadow: 0 6px 18px rgba(18, 40, 71, 0.07);
+      }
+
+      .title {
+        margin: 0 0 8px;
+        font-family: "Outfit", "Segoe UI", sans-serif;
+        font-size: 22px;
+      }
+
+      .sub {
+        margin: 0;
+        color: #60718f;
+        font-size: 13px;
+      }
+
+      .swatches {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .swatch {
+        border-radius: 12px;
+        border: 1px solid #d0dcee;
+        min-height: 84px;
+        padding: 9px;
+        font-size: 11px;
+      }
+
+      .type-sample {
+        margin-top: 8px;
+        border: 1px solid #d2def0;
+        border-radius: 14px;
+        padding: 10px;
+        background: #f8fbff;
+      }
+
+      .token-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+
+      .token-table th,
+      .token-table td {
+        border-bottom: 1px solid #d8e2f2;
+        text-align: left;
+        padding: 8px 6px;
+        vertical-align: top;
+      }
+
+      .chip-row,
+      .btn-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .chip {
+        border-radius: 999px;
+        border: 1px solid #c7d5ec;
+        background: #f8fbff;
+        padding: 7px 11px;
+        font-size: 12px;
+        color: #4f6284;
+        font-weight: 600;
+      }
+
+      .chip.active {
+        color: #fff;
+        background: linear-gradient(135deg, #0f54d8, #2d94ff);
+        border-color: #0f54d8;
+      }
+
+      .btn {
+        border-radius: 12px;
+        padding: 11px 13px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .btn.primary {
+        color: #fff;
+        background: linear-gradient(135deg, #0f54d8, #2d94ff);
+      }
+
+      .btn.secondary {
+        color: #1c4ea5;
+        border: 1px solid #b4c8ea;
+        background: #f8fbff;
+      }
+
+      .input {
+        border-radius: 12px;
+        border: 1px solid #cedaf0;
+        background: #f8fbff;
+        padding: 11px 12px;
+        margin-top: 8px;
+        color: #334867;
+        font-size: 13px;
+      }
+
+      .variant-grid {
+        margin-top: 8px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .variant {
+        border-radius: 12px;
+        border: 1px solid #d0dced;
+        background: #f8fbff;
+        padding: 10px;
+        font-size: 12px;
+      }
+
+      .pill {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-size: 10px;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <h1>00 Foundations + 01 Components (v2)</h1>
+        <p>
+          Tokens and components now match the rebuilt app direction: sharper contrast, stronger hierarchy, capture-first
+          surfaces, and explicit decision states for scheduling conflicts and check-ins.
+        </p>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <h2 class="title">Color System</h2>
+          <p class="sub">Primary blue spine with mint success, amber warning, and rose error layers.</p>
+          <div class="swatches">
+            <div class="swatch" style="background:#0f54d8;color:#fff;">Blue/700<br />#0F54D8</div>
+            <div class="swatch" style="background:#1971f3;color:#fff;">Blue/600<br />#1971F3</div>
+            <div class="swatch" style="background:#dcedff;">Blue/100<br />#DCEDFF</div>
+            <div class="swatch" style="background:#dffaf4;">Mint/100<br />#DFFAF4</div>
+            <div class="swatch" style="background:#149f8b;color:#fff;">Mint/600<br />#149F8B</div>
+            <div class="swatch" style="background:#fff2d1;">Amber/100<br />#FFF2D1</div>
+            <div class="swatch" style="background:#bb7a00;color:#fff;">Amber/600<br />#BB7A00</div>
+            <div class="swatch" style="background:#ffe4ea;">Rose/100<br />#FFE4EA</div>
+            <div class="swatch" style="background:#ba3f56;color:#fff;">Rose/600<br />#BA3F56</div>
+            <div class="swatch" style="background:#0a1222;color:#fff;">Ink/900<br />#0A1222</div>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2 class="title">Typography</h2>
+          <p class="sub">Two-font system: Outfit for hierarchy, Public Sans for readability.</p>
+          <div class="type-sample" style="font-family:'Outfit',sans-serif;font-size:34px;line-height:40px;font-weight:700;">H1 / Outfit 700</div>
+          <div class="type-sample" style="font-family:'Outfit',sans-serif;font-size:24px;line-height:30px;font-weight:700;">H2 / Outfit 700</div>
+          <div class="type-sample" style="font-size:18px;line-height:24px;font-weight:700;">Section / Public Sans 700</div>
+          <div class="type-sample" style="font-size:15px;line-height:22px;">Body / Public Sans 400</div>
+          <div class="type-sample" style="font-size:13px;line-height:18px;color:#60718f;">Meta / Public Sans 500</div>
+        </article>
+
+        <article class="card">
+          <h2 class="title">Spacing + Radius + Elevation</h2>
+          <table class="token-table">
+            <thead>
+              <tr><th>Token</th><th>Value</th><th>Usage</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Space/1..6</td><td>4,8,12,16,20,24</td><td>4pt scale across cards, modal, tab, and chips</td></tr>
+              <tr><td>Radius/XL</td><td>28</td><td>Hero containers, Live Activity shells</td></tr>
+              <tr><td>Radius/LG</td><td>22</td><td>Primary cards and sheets</td></tr>
+              <tr><td>Radius/MD</td><td>16</td><td>List rows and modal internals</td></tr>
+              <tr><td>Elevation/Card</td><td>0 6 18 rgba(18,40,71,.07)</td><td>Default surface depth</td></tr>
+              <tr><td>Elevation/Key Action</td><td>0 14 24 rgba(20,74,175,.35)</td><td>Global quick-add and CTA emphasis</td></tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="card">
+          <h2 class="title">Core Inputs + Actions</h2>
+          <p class="sub">Used by Home capture, follow-up modal, and settings actions.</p>
+          <div class="btn-row" style="margin-top:8px;">
+            <div class="btn primary">Save and auto-schedule</div>
+            <div class="btn secondary">Secondary action</div>
+          </div>
+          <div class="chip-row" style="margin-top:10px;">
+            <span class="chip">Low</span>
+            <span class="chip active">Medium</span>
+            <span class="chip">High</span>
+          </div>
+          <div class="input">What needs your attention?</div>
+          <div class="input">Estimated minutes</div>
+        </article>
+      </section>
+
+      <section class="card">
+        <h2 class="title">Component Variant Matrix</h2>
+        <table class="token-table">
+          <thead>
+            <tr><th>Component</th><th>Variants</th><th>States</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Capture Composer</td>
+              <td>home, quick-add sheet, widget-source</td>
+              <td>idle, parsing, follow-up-needed, scheduling, success, failure</td>
+              <td>Includes source tag + importance chip group</td>
+            </tr>
+            <tr>
+              <td>Conflict Decision Sheet</td>
+              <td>standard</td>
+              <td>overlap, make-room, auto-decide, cancel</td>
+              <td>Replaces alert UX; card-based decision list</td>
+            </tr>
+            <tr>
+              <td>Scheduled Item</td>
+              <td>upcoming, overdue</td>
+              <td>idle, completed-loading, reschedule-loading</td>
+              <td>"Why this time?" available on long press or action row</td>
+            </tr>
+            <tr>
+              <td>Calendar Health Banner</td>
+              <td>ok, reconnect, failed</td>
+              <td>idle, checking</td>
+              <td>Placed above hero on Home</td>
+            </tr>
+            <tr>
+              <td>Notification Card</td>
+              <td>permission, test</td>
+              <td>unknown, granted, denied</td>
+              <td>Settings + future onboarding reminder</td>
+            </tr>
+            <tr>
+              <td>Live Session Surface</td>
+              <td>lock-expanded, island-compact, island-minimal</td>
+              <td>not-started, in-progress, awaiting-check-in, completed</td>
+              <td>Action payload: complete / reschedule</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2 class="title">Accessibility Targets</h2>
+        <div class="variant-grid">
+          <div class="variant">
+            <span class="pill" style="background:#dffaf4;color:#177f70;">Contrast</span>
+            <p style="margin:8px 0 0;color:#4f6284;">AA minimum for all text/background pairings; warning and error cards validated for readable body text.</p>
+          </div>
+          <div class="variant">
+            <span class="pill" style="background:#dcedff;color:#1f5ec5;">Touch Targets</span>
+            <p style="margin:8px 0 0;color:#4f6284;">All primary controls sized to 44x44pt minimum. Quick-add exceeds minimum for thumb reach.</p>
+          </div>
+          <div class="variant">
+            <span class="pill" style="background:#fff2d1;color:#8e5f00;">Type Scaling</span>
+            <p style="margin:8px 0 0;color:#4f6284;">Layout keeps key cards readable at larger text sizes by avoiding fixed-height text containers.</p>
+          </div>
+          <div class="variant">
+            <span class="pill" style="background:#ffe4ea;color:#96273e;">Motion</span>
+            <p style="margin:8px 0 0;color:#4f6284;">Only meaningful transitions: sheet in/out, progress updates, and success/error state swaps.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

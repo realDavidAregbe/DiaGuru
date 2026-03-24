@@ -159,6 +159,28 @@ Use the Settings tab to test immediate and scheduled notifications, or to toggle
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+## UI/UX Design Package (Phase 1)
+
+The iOS-first high-fidelity design specification for Phase 1 lives in:
+
+- `docs/design/phase1/README.md`
+- `docs/design/phase1/00-foundations.md`
+- `docs/design/phase1/01-components.md`
+- `docs/design/phase1/frame-manifest.csv`
+- `docs/design/phase1/figma.variables.json`
+
+This package includes screen/state specs, component variants, prototype flow wiring, QA scenarios, and handoff contracts for upcoming Live Activities and widget work.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Project Notes
+
+Planning, implementation notes, and progress tracking are consolidated in:
+
+- `docs/PROJECT_NOTES.md`
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## Testing
 
 DiaGuru ships with Jest + React Native Testing Library for Expo components and Deno tests for Edge Functions.

@@ -56,6 +56,7 @@ type PendingCaptureState = {
   importance: number;
   appended: string[];
   mode: ParseMode;
+  parseResult: ParseTaskResponse | null;
 };
 
 type ReminderEntry = {
@@ -141,6 +142,12 @@ function normalizeExtractionJson(value: unknown) {
     }
   }
   return null;
+}
+
+function normalizeDisplayTitle(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const flattened = value.replace(/\s+/g, ' ').trim();
+  return flattened.length > 0 ? flattened : null;
 }
 
 function formatIsoLabel(value: unknown) {
@@ -991,6 +998,14 @@ export default function HomeTab() {
       // Map LLM 1-5 scale to DB 1-3 scale to satisfy capture_entries_importance_check
       const mappedImportance =
         llmCompositeImportance <= 2 ? 1 : llmCompositeImportance >= 5 ? 3 : 2;
+      const displayTitle = normalizeDisplayTitle(extraction?.title) ?? content;
+      const extractionJson = extraction
+        ? {
+          ...extraction,
+          original_prompt: content,
+          display_title: displayTitle,
+        }
+        : null;
 
       // Persist rich facets in scheduling_notes for server-side policy
       const schedulingNotes = extraction
@@ -999,7 +1014,7 @@ export default function HomeTab() {
 
       const created = await addCapture(
         {
-          content,
+          content: displayTitle,
           estimatedMinutes,
           importance: mappedImportance,
           urgency: llmUrgency,
@@ -1016,7 +1031,7 @@ export default function HomeTab() {
             timePrefDay: extraction?.time_preferences?.day ?? null,
             importanceRationale: extraction?.importance?.rationale ?? null,
             schedulingNotes,
-            extractionJson: extraction ?? null,
+            extractionJson,
             constraintType: constraint.constraintType,
           constraintTime: constraint.constraintTime,
           constraintEnd: constraint.constraintEnd,
@@ -1158,7 +1173,7 @@ export default function HomeTab() {
         pendingCapture.baseContent,
         resolvedMinutes,
         pendingCapture.importance,
-        null,
+        pendingCapture.parseResult,
       );
 
       setFollowUpState(null);
@@ -1235,6 +1250,7 @@ export default function HomeTab() {
             importance,
             appended: [],
             mode,
+            parseResult,
           });
           setFollowUpState({
             prompt: parseResult.follow_up.prompt,

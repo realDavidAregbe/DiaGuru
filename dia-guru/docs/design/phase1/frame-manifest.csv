@@ -1,0 +1,54 @@
+page,frame_id,title,route,state,width,height,notes
+02 Auth,AUTH-01,Sign In,/(auth)/sign-in,default,390,844,Primary auth entry
+02 Auth,AUTH-02,Sign In Loading,/(auth)/sign-in,loading,390,844,Primary CTA loading
+02 Auth,AUTH-03,Sign In Error,/(auth)/sign-in,error,390,844,Inline error banner
+02 Auth,AUTH-04,Sign Up,/(auth)/sign-in,signup,390,844,Secondary account creation
+02 Auth,AUTH-05,Email Verification Notice,/(auth)/sign-in,verification,390,844,No active session after signup
+02 Auth,AUTH-06,Auth Gate Loading,/index,gate-loading,390,844,Session check loader
+03 Home,HOME-01,Default Populated,/(tabs)/index,populated,390,844,Main home with data
+03 Home,HOME-02,Empty Queue + Empty Scheduled,/(tabs)/index,empty,390,844,No pending or scheduled items
+03 Home,HOME-03,Pending Loading,/(tabs)/index,pending-loading,390,844,Pending list spinner
+03 Home,HOME-04,Pending Error,/(tabs)/index,pending-error,390,844,Pending list error message
+03 Home,HOME-05,Scheduled Loading,/(tabs)/index,scheduled-loading,390,844,Scheduled list spinner
+03 Home,HOME-06,Scheduled Error,/(tabs)/index,scheduled-error,390,844,Scheduled list error message
+03 Home,HOME-07,Pull To Refresh,/(tabs)/index,refreshing,390,844,Refresh control active
+03 Home,HOME-BANNER-01,Calendar Needs Reconnect,/(tabs)/index,calendar-needs-reconnect,390,844,Warning banner visible
+03 Home,HOME-BANNER-02,Calendar Check Failed,/(tabs)/index,calendar-check-failed,390,844,Error banner visible
+03 Home,HOME-PLAN-01,Today Changed Card,/(tabs)/index,plan-summary,390,844,Plan actions listed
+03 Home,HOME-PLAN-02,Today Changed Undo Loading,/(tabs)/index,plan-undo-loading,390,844,Undo action loading
+03 Home,HOME-CHUNK-01,Last Scheduled Chunks,/(tabs)/index,chunks,390,844,Recent chunks + flags
+03 Home,HOME-QUICKADD-01,Quick Add Sheet Default,/(tabs)/index,quickadd-default,390,844,Global quick add entry
+03 Home,HOME-QUICKADD-02,Quick Add Keyboard Active,/(tabs)/index,quickadd-keyboard,390,844,Input focused
+03 Home,HOME-QUICKADD-03,Quick Add Submitting,/(tabs)/index,quickadd-submitting,390,844,Submission progress
+03 Home,HOME-QUICKADD-04,Quick Add Success,/(tabs)/index,quickadd-success,390,844,Confirmation microstate
+03 Home,HOME-FOLLOWUP-01,DeepSeek Follow Up Modal,/(tabs)/index,follow-up,390,844,Clarifying question modal
+03 Home,HOME-CONFLICT-01,Scheduling Conflict Sheet,/(tabs)/index,conflict-sheet,390,844,Decision actions
+03 Home,HOME-WHY-01,Why This Time Sheet,/(tabs)/index,why-sheet,390,844,Scheduling reasons
+04 Calendar,CAL-01,Upcoming List,/(tabs)/calendar,list,390,844,Default event list
+04 Calendar,CAL-02,Loading,/(tabs)/calendar,loading,390,844,Activity indicator state
+04 Calendar,CAL-03,Empty,/(tabs)/calendar,empty,390,844,No events in window
+04 Calendar,CAL-04,Error,/(tabs)/calendar,error,390,844,Fetch error state
+04 Calendar,CAL-05,Refresh,/(tabs)/calendar,refreshing,390,844,Pull to refresh active
+05 Profile,PROF-01,Default,/(tabs)/profile,default,390,844,Editable profile with status
+05 Profile,PROF-02,Loading,/(tabs)/profile,loading,390,844,Session/profile loading
+05 Profile,PROF-03,Update Saving,/(tabs)/profile,update-saving,390,844,Profile update progress
+05 Profile,PROF-04,Google Unlinked,/(tabs)/profile,google-unlinked,390,844,Connect CTA enabled
+05 Profile,PROF-05,Google Linking,/(tabs)/profile,google-linking,390,844,Opening browser state
+05 Profile,PROF-06,Google Linked,/(tabs)/profile,google-linked,390,844,Linked state
+05 Profile,PROF-07,Google Status Error,/(tabs)/profile,google-error,390,844,Inline error text
+06 Settings,SET-01,Default,/(tabs)/settings,default,390,844,Base settings state
+06 Settings,SET-02,Assistant Mode Loading,/(tabs)/settings,assistant-loading,390,844,Mode preference loading
+06 Settings,SET-03,Notification Unknown,/(tabs)/settings,notif-unknown,390,844,Initial permission status
+06 Settings,SET-04,Notification Granted,/(tabs)/settings,notif-granted,390,844,Permission approved
+06 Settings,SET-05,Notification Denied,/(tabs)/settings,notif-denied,390,844,Permission denied
+06 Settings,SET-06,Developer Tools,/(tabs)/settings,developer,390,844,DeepSeek tester entry
+07 Live Activity + Widgets,LA-01,Live Activity Not Started,ios-live-activity,not-started,393,174,Pre-start state
+07 Live Activity + Widgets,LA-02,Live Activity In Progress,ios-live-activity,in-progress,393,174,Active task state
+07 Live Activity + Widgets,LA-03,Live Activity Awaiting Check-In,ios-live-activity,awaiting-check-in,393,174,Post-end check-in state
+07 Live Activity + Widgets,LA-04,Live Activity Completed,ios-live-activity,completed,393,174,Ended state
+07 Live Activity + Widgets,LA-LS-01,Lock Screen Expanded,ios-live-activity,lockscreen-expanded,393,170,Main lock screen layout
+07 Live Activity + Widgets,LA-DI-Compact-01,Dynamic Island Compact,ios-live-activity,di-compact,126,37,Compact island
+07 Live Activity + Widgets,LA-DI-Minimal-01,Dynamic Island Minimal,ios-live-activity,di-minimal,36,36,Minimal island
+07 Live Activity + Widgets,LA-DI-Expanded-01,Dynamic Island Expanded,ios-live-activity,di-expanded,353,160,Expanded island
+07 Live Activity + Widgets,WID-S-01,Widget Small,ios-widget,small-default,158,158,One-tap quick capture
+07 Live Activity + Widgets,WID-M-01,Widget Medium,ios-widget,medium-default,338,158,Quick capture plus schedule summary

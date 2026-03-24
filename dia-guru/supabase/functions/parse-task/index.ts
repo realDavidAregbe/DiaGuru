@@ -50,7 +50,7 @@ type ParseResponse = {
   };
 };
 
-// Rich extraction types (aligned with test-deepseek)
+// Rich extraction types
 type DiaGuruTaskExtraction = {
   title: string | null;
   estimated_minutes: number | null;
@@ -59,21 +59,28 @@ type DiaGuruTaskExtraction = {
     kind: "hard" | "soft" | null;
     source: "explicit" | "inferred" | null;
   } | null;
-  scheduled_time: { datetime: string | null; precision: "exact" | "approximate" | null; source: "explicit" | "inferred" | null } | null;
+  scheduled_time: {
+    datetime: string | null;
+    precision: "exact" | "approximate" | null;
+    source: "explicit" | "inferred" | null;
+  } | null;
   execution_window: {
     relation:
-    | "before_deadline"
-    | "after_deadline"
-    | "around_scheduled"
-    | "between"
-    | "on_day"
-    | "anytime"
-    | null;
+      | "before_deadline"
+      | "after_deadline"
+      | "around_scheduled"
+      | "between"
+      | "on_day"
+      | "anytime"
+      | null;
     start: string | null;
     end: string | null;
     source: "explicit" | "inferred" | "default" | null;
   } | null;
-  time_preferences: { time_of_day: "morning" | "afternoon" | "evening" | "night" | null; day: "today" | "tomorrow" | "specific_date" | "any" | null } | null;
+  time_preferences: {
+    time_of_day: "morning" | "afternoon" | "evening" | "night" | null;
+    day: "today" | "tomorrow" | "specific_date" | "any" | null;
+  } | null;
   importance?: {
     urgency: 1 | 2 | 3 | 4 | 5 | null;
     impact: 1 | 2 | 3 | 4 | 5 | null;
@@ -113,7 +120,12 @@ type DiaGuruTaskExtraction = {
 // Fields we recommend to persist onto capture_entries
 type CaptureMapping = {
   estimated_minutes: number | null;
-  constraint_type: "flexible" | "deadline_time" | "deadline_date" | "start_time" | "window";
+  constraint_type:
+    | "flexible"
+    | "deadline_time"
+    | "deadline_date"
+    | "start_time"
+    | "window";
   constraint_time: string | null;
   constraint_end: string | null;
   constraint_date: string | null;
@@ -127,9 +139,19 @@ type CaptureMapping = {
 
   scheduled_source?: "explicit" | "inferred" | null;
   scheduled_precision?: "exact" | "approximate" | null;
-  execution_window_relation?: "before_deadline" | "after_deadline" | "around_scheduled" | "between" | "on_day" | "anytime" | null;
+  execution_window_relation?:
+    | "before_deadline"
+    | "after_deadline"
+    | "around_scheduled"
+    | "between"
+    | "on_day"
+    | "anytime"
+    | null;
   execution_window_source?: "explicit" | "inferred" | "default" | null;
-  time_preferences?: { time_of_day?: "morning" | "afternoon" | "evening" | "night" | null; day?: "today" | "tomorrow" | "specific_date" | "any" | null } | null;
+  time_preferences?: {
+    time_of_day?: "morning" | "afternoon" | "evening" | "night" | null;
+    day?: "today" | "tomorrow" | "specific_date" | "any" | null;
+  } | null;
   importance?: {
     urgency?: 1 | 2 | 3 | 4 | 5 | null;
     impact?: 1 | 2 | 3 | 4 | 5 | null;
@@ -165,7 +187,8 @@ export async function handler(req: Request) {
       );
     }
 
-    const timezone = (body.timezone ?? DEFAULT_TIMEZONE).trim() || DEFAULT_TIMEZONE;
+    const timezone = (body.timezone ?? DEFAULT_TIMEZONE).trim() ||
+      DEFAULT_TIMEZONE;
     const referenceNow = parseReferenceNow(body.now) ?? new Date();
     const deepseekApiKey = Deno.env.get("DEEPSEEK_API_KEY") ?? "";
     const deepseekEnabled = deepseekApiKey.length > 0;
@@ -174,7 +197,8 @@ export async function handler(req: Request) {
     const heuristics: string[] = [];
 
     if (!deepseekEnabled) {
-      const detail = "DeepSeek is required in conversational_strict mode (DEEPSEEK_API_KEY missing).";
+      const detail =
+        "DeepSeek is required in conversational_strict mode (DEEPSEEK_API_KEY missing).";
       notes.push(detail);
       return json(
         {
@@ -201,18 +225,26 @@ export async function handler(req: Request) {
     try {
       deepseekAttempted = true;
       const started = performance.now();
-      const { systemPrompt, userPrompt } = buildExtractionPrompts({ content, timezone, referenceNow });
+      const { systemPrompt, userPrompt } = buildExtractionPrompts({
+        content,
+        timezone,
+        referenceNow,
+      });
 
       const rawEndpoint = Deno.env.get("DEEPSEEK_API_URL");
       const endpoint = !rawEndpoint || rawEndpoint.trim() === ""
         ? "https://api.deepseek.com/v1/chat/completions"
         : /\/chat\/completions\/?$/i.test(rawEndpoint.trim())
-          ? rawEndpoint.trim()
-          : `${rawEndpoint.trim().replace(/\/+$/g, "")}/v1/chat/completions`;
+        ? rawEndpoint.trim()
+        : `${rawEndpoint.trim().replace(/\/+$/g, "")}/v1/chat/completions`;
 
       const res = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${deepseekApiKey}` },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${deepseekApiKey}`,
+        },
         body: JSON.stringify({
           model: Deno.env.get("DEEPSEEK_MODEL") ?? "deepseek-chat",
           messages: [
@@ -228,10 +260,20 @@ export async function handler(req: Request) {
 
       const payload = await safeReadJson(res);
       lastPayload = payload;
-      try { console.log("parse-task deepseek response", { status: res.status, ok: res.ok, payload }); } catch { /* ignore logging errors */ }
+      try {
+        console.log("parse-task deepseek response", {
+          status: res.status,
+          ok: res.ok,
+          payload,
+        });
+      } catch {
+        /* ignore logging errors */
+      }
       deepseekLatency = Math.round(performance.now() - started);
       if (!res.ok) {
-        const snippet = typeof payload === "string" ? payload.slice(0, 200) : JSON.stringify(payload).slice(0, 200);
+        const snippet = typeof payload === "string"
+          ? payload.slice(0, 200)
+          : JSON.stringify(payload).slice(0, 200);
         throw new Error(`DeepSeek responded ${res.status}: ${snippet}`);
       }
       const message = extractDeepSeekMessage(payload);
@@ -239,7 +281,11 @@ export async function handler(req: Request) {
 
       const raw = String(message);
       lastRawMessage = raw;
-      try { console.log("parse-task deepseek message", raw); } catch { /* ignore logging errors */ }
+      try {
+        console.log("parse-task deepseek message", raw);
+      } catch {
+        /* ignore logging errors */
+      }
       let parsed: unknown;
       try {
         parsed = JSON.parse(raw);
@@ -247,10 +293,15 @@ export async function handler(req: Request) {
         let recovered = extractFirstJsonObject(raw);
         if (!recovered) {
           // Retry once with stricter instructions
-          const strictSystem = `${systemPrompt}\nSTRICT OUTPUT: Return exactly one minified JSON object on a single line with no spaces or newlines. No markdown, no code fences, no commentary.`;
+          const strictSystem =
+            `${systemPrompt}\nSTRICT OUTPUT: Return exactly one minified JSON object on a single line with no spaces or newlines. No markdown, no code fences, no commentary.`;
           const strictRes = await fetch(endpoint, {
             method: "POST",
-            headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${deepseekApiKey}` },
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              Authorization: `Bearer ${deepseekApiKey}`,
+            },
             body: JSON.stringify({
               model: Deno.env.get("DEEPSEEK_MODEL") ?? "deepseek-chat",
               messages: [
@@ -267,7 +318,9 @@ export async function handler(req: Request) {
           const strictPayload = await safeReadJson(strictRes);
           if (strictRes.ok) {
             const strictMsg = extractDeepSeekMessage(strictPayload);
-            if (typeof strictMsg === "string") recovered = extractFirstJsonObject(strictMsg) ?? strictMsg;
+            if (typeof strictMsg === "string") {
+              recovered = extractFirstJsonObject(strictMsg) ?? strictMsg;
+            }
           }
         }
         if (!recovered) throw new Error("DeepSeek did not return valid JSON");
@@ -291,53 +344,76 @@ export async function handler(req: Request) {
       captureProposal = mapping;
 
       // needed list
-      const missing = Array.isArray(extraction.missing) ? extraction.missing.slice() : [];
-      if (extraction.estimated_minutes == null) missing.push("estimated_minutes");
+      const missing = Array.isArray(extraction.missing)
+        ? extraction.missing.slice()
+        : [];
+      if (extraction.estimated_minutes == null) {
+        missing.push("estimated_minutes");
+      }
       missing.sort();
       for (const m of missing) if (!needed.includes(m)) needed.push(m);
 
       if (missing.length > 0 && extraction.clarifying_question) {
-        followUp = { type: "clarify", prompt: cleanupQuestion(extraction.clarifying_question)!, missing };
+        followUp = {
+          type: "clarify",
+          prompt: cleanupQuestion(extraction.clarifying_question)!,
+          missing,
+        };
       }
       notes.push("DeepSeek extracted structured task data.");
     } catch (error) {
       deepseekErrored = true;
       const detail = describeError("DeepSeek extraction failed", error);
       notes.push(detail);
-      try { console.log("parse-task deepseek extraction failed", { error: String(error), lastRawMessage, lastPayload }); } catch { /* ignore logging errors */ }
-      return json({
-        error: "DeepSeek extraction failed in conversational_strict mode.",
-        details: detail,
-        notes,
-        debug: {
-          deepseek_raw: lastRawMessage ?? undefined,
-          deepseek_payload_excerpt:
-            typeof lastPayload === "string"
+      try {
+        console.log("parse-task deepseek extraction failed", {
+          error: String(error),
+          lastRawMessage,
+          lastPayload,
+        });
+      } catch {
+        /* ignore logging errors */
+      }
+      return json(
+        {
+          error: "DeepSeek extraction failed in conversational_strict mode.",
+          details: detail,
+          notes,
+          debug: {
+            deepseek_raw: lastRawMessage ?? undefined,
+            deepseek_payload_excerpt: typeof lastPayload === "string"
               ? (lastPayload as string).slice(0, 4000)
               : JSON.stringify(lastPayload ?? null).slice(0, 4000),
+          },
         },
-      }, 502);
+        502,
+      );
     }
-
 
     const response: ParseResponse = {
       content,
       structured: {
         estimated_minutes: extraction?.estimated_minutes ?? undefined,
-        datetime: extraction?.scheduled_time?.datetime ?? extraction?.deadline?.datetime ?? undefined,
-        window:
-          extraction?.execution_window?.start || extraction?.execution_window?.end
-            ? { start: extraction.execution_window?.start ?? undefined, end: extraction.execution_window?.end ?? undefined }
-            : undefined,
+        datetime: extraction?.scheduled_time?.datetime ??
+          extraction?.deadline?.datetime ??
+          undefined,
+        window: extraction?.execution_window?.start ||
+            extraction?.execution_window?.end
+          ? {
+            start: extraction.execution_window?.start ?? undefined,
+            end: extraction.execution_window?.end ?? undefined,
+          }
+          : undefined,
         extraction: extraction ?? undefined,
-        capture: captureProposal ? { ...captureProposal, reason: captureProposalReason(extraction!) } : undefined,
+        capture: captureProposal
+          ? { ...captureProposal, reason: captureProposalReason(extraction!) }
+          : undefined,
       },
       debug: {
         deepseek_raw: lastRawMessage ?? undefined,
-        deepseek_payload_excerpt:
-          typeof lastPayload === "string"
-            ? (lastPayload as string).slice(0, 4000)
-            : JSON.stringify(lastPayload ?? null).slice(0, 4000),
+        deepseek_payload_excerpt: typeof lastPayload === "string"
+          ? (lastPayload as string).slice(0, 4000)
+          : JSON.stringify(lastPayload ?? null).slice(0, 4000),
       },
       notes,
       needed,
@@ -370,17 +446,21 @@ export async function handler(req: Request) {
         window_end: response.structured.capture?.window_end ?? null,
         deadline_at: response.structured.capture?.deadline_at ?? null,
         start_flexibility: extraction?.flexibility?.start_flexibility ?? null,
-        duration_flexibility: extraction?.flexibility?.duration_flexibility ?? null,
+        duration_flexibility: extraction?.flexibility?.duration_flexibility ??
+          null,
         cannot_overlap: extraction?.flexibility?.cannot_overlap ?? null,
         urgency: extraction?.importance?.urgency ?? null,
         impact: extraction?.importance?.impact ?? null,
         reschedule_penalty: extraction?.importance?.reschedule_penalty ?? null,
         blocking: extraction?.importance?.blocking ?? null,
         time_pref_day: extraction?.time_preferences?.day ?? null,
-        time_pref_time_of_day: extraction?.time_preferences?.time_of_day ?? null,
+        time_pref_time_of_day: extraction?.time_preferences?.time_of_day ??
+          null,
         kind: extraction?.kind ?? null,
       });
-    } catch { /* ignore logging errors */ }
+    } catch {
+      /* ignore logging errors */
+    }
 
     return json(response);
   } catch (error) {
@@ -427,7 +507,9 @@ async function callDuckling(text: string, timezone: string, now: Date) {
   return payload as DucklingItem[];
 }
 
-function pickDurationFromDuckling(items: DucklingItem[]): DurationCandidate | null {
+function pickDurationFromDuckling(
+  items: DucklingItem[],
+): DurationCandidate | null {
   for (const item of items) {
     const dim = item.dim ?? item.entity;
     if (dim !== "duration") continue;
@@ -482,7 +564,9 @@ function normalizeDucklingDuration(value: Record<string, unknown>) {
   return null;
 }
 
-function pickTemporalFromDuckling(items: DucklingItem[]): TemporalCandidate | null {
+function pickTemporalFromDuckling(
+  items: DucklingItem[],
+): TemporalCandidate | null {
   for (const item of items) {
     const dim = item.dim ?? item.entity;
     if (dim !== "time") continue;
@@ -498,7 +582,12 @@ function pickTemporalFromDuckling(items: DucklingItem[]): TemporalCandidate | nu
       const from = readNestedString(value, ["from", "value"]);
       const to = readNestedString(value, ["to", "value"]);
       if (from || to) {
-        return { type: "interval", from: from ?? undefined, to: to ?? undefined, source: item.body ?? "duckling" };
+        return {
+          type: "interval",
+          from: from ?? undefined,
+          to: to ?? undefined,
+          source: item.body ?? "duckling",
+        };
       }
     }
   }
@@ -507,7 +596,9 @@ function pickTemporalFromDuckling(items: DucklingItem[]): TemporalCandidate | nu
 
 function pickDurationFromRegex(text: string): DurationCandidate | null {
   const normalized = text.toLowerCase();
-  const compactMatch = /(\d+)\s*h(?:\s*(\d+)\s*m)?/.exec(normalized);
+  const compactMatch = /(?<![\d.])(\d+)\s*h(?:\s*(\d+)\s*m)?\b/.exec(
+    normalized,
+  );
   if (compactMatch) {
     const hours = Number(compactMatch[1]);
     const minutes = compactMatch[2] ? Number(compactMatch[2]) : 0;
@@ -629,7 +720,9 @@ async function requestDeepSeekClarification(input: {
 
   const payload = await safeReadJson(res);
   if (!res.ok) {
-    const snippet = typeof payload === "string" ? payload.slice(0, 200) : JSON.stringify(payload).slice(0, 200);
+    const snippet = typeof payload === "string"
+      ? payload.slice(0, 200)
+      : JSON.stringify(payload).slice(0, 200);
     throw new Error(`DeepSeek responded ${res.status}: ${snippet}`);
   }
 
@@ -652,19 +745,25 @@ function buildDeepSeekUserPrompt(input: {
   ];
   const structuredBits: string[] = [];
   if (input.structured.estimated_minutes) {
-    structuredBits.push(`estimated_minutes=${input.structured.estimated_minutes}`);
+    structuredBits.push(
+      `estimated_minutes=${input.structured.estimated_minutes}`,
+    );
   }
   if (input.structured.datetime) {
     structuredBits.push(`datetime=${input.structured.datetime}`);
   }
   if (input.structured.window) {
-    structuredBits.push(`window=${input.structured.window.start} -> ${input.structured.window.end}`);
+    structuredBits.push(
+      `window=${input.structured.window.start} -> ${input.structured.window.end}`,
+    );
   }
   if (structuredBits.length > 0) {
     parts.push(`Already parsed: ${structuredBits.join(", ")}`);
   }
   if (input.context?.ambiguousTime) {
-    parts.push(`Ambiguous time detected: ${input.context.ambiguousTime} (needs AM/PM clarification).`);
+    parts.push(
+      `Ambiguous time detected: ${input.context.ambiguousTime} (needs AM/PM clarification).`,
+    );
   }
   parts.push(
     "Ask a single short clarifying question to collect the missing field(s). Do not propose values; only ask for the information.",
@@ -771,8 +870,8 @@ function extractFirstJsonObject(text: string): string | null {
   if (!text) return null;
   const fence = /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(text);
   if (fence && fence[1]) return fence[1].trim();
-  const first = text.indexOf('{');
-  const last = text.lastIndexOf('}');
+  const first = text.indexOf("{");
+  const last = text.lastIndexOf("}");
   if (first >= 0 && last > first) return text.slice(first, last + 1).trim();
   return null;
 }
@@ -797,7 +896,8 @@ function formatLocalIsoWithOffset(date: Date, timeZone: string) {
     hour12: false,
   });
   const parts = formatter.formatToParts(date);
-  const lookup = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
+  const lookup = (type: string) =>
+    parts.find((part) => part.type === type)?.value ?? "00";
   const year = lookup("year");
   const month = lookup("month");
   const day = lookup("day");
@@ -809,7 +909,11 @@ function formatLocalIsoWithOffset(date: Date, timeZone: string) {
   return `${year}-${month}-${day}T${hour}:${minute}:${second}${offset}`;
 }
 
-function buildExtractionPrompts(input: { content: string; timezone: string; referenceNow: Date }) {
+function buildExtractionPrompts(input: {
+  content: string;
+  timezone: string;
+  referenceNow: Date;
+}) {
   const schema = `{
   "title": string | null,
   "estimated_minutes": number | null,
@@ -869,35 +973,59 @@ Rules:
   - For phrases like "before sleep tonight" / "before bed tonight", treat them as "before end of working hours" (22:00 local) unless the user explicitly gives a later bedtime.
   - Do not infer deadlines after WorkingHours end unless the user explicitly requests.
   - time_preferences captures soft hints (morning/evening/tomorrow).
-  - If anything is missing, include one concise clarifying_question.`;
-  const systemPrompt = `You are a task extraction assistant for DiaGuru.\n${rules}\nSchema:\n${schema}`;
+  - If anything is missing, include one concise clarifying_question.
+  - for the title, generate an appropriate title`;
+  const systemPrompt =
+    `You are a task extraction assistant for DiaGuru.\n${rules}\nSchema:\n${schema}`;
   let localNow = input.referenceNow.toISOString();
   let offsetMinutes = 0;
   try {
     localNow = formatLocalIsoWithOffset(input.referenceNow, input.timezone);
-    offsetMinutes = getTimezoneOffsetMinutes(input.referenceNow, input.timezone);
+    offsetMinutes = getTimezoneOffsetMinutes(
+      input.referenceNow,
+      input.timezone,
+    );
   } catch (_error) {
     localNow = `${input.referenceNow.toISOString()} (UTC)`;
   }
-  const userPrompt = `Text: """${input.content}"""\nTimezone: ${input.timezone}\nTimezoneOffsetMinutes: ${offsetMinutes}\nNow (UTC): ${input.referenceNow.toISOString()}\nNow (Local ISO): ${localNow}\nWorkingHours: 08:00-22:00 (local)`;
+  const userPrompt =
+    `Text: """${input.content}"""\nTimezone: ${input.timezone}\nTimezoneOffsetMinutes: ${offsetMinutes}\nNow (UTC): ${input.referenceNow.toISOString()}\nNow (Local ISO): ${localNow}\nWorkingHours: 08:00-22:00 (local)`;
   return { systemPrompt, userPrompt };
 }
 
-export function normalizeExtraction(obj: unknown): DiaGuruTaskExtraction | null {
+export function normalizeExtraction(
+  obj: unknown,
+): DiaGuruTaskExtraction | null {
   if (!obj || typeof obj !== "object") return null;
   const record = obj as Record<string, unknown>;
   const asRecord = (value: unknown): Record<string, unknown> | null =>
-    value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : null;
   const s = (value: unknown) => (typeof value === "string" ? value : null);
   const n = (value: unknown) => {
-    const num = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+    const num = typeof value === "number"
+      ? value
+      : typeof value === "string"
+      ? Number(value)
+      : NaN;
     return Number.isFinite(num) ? num : null;
   };
-  const one = <T extends string>(value: unknown, vals: readonly T[]): T | null =>
-    typeof value === "string" && (vals as readonly string[]).includes(value) ? (value as T) : null;
-  const oneNum = <T extends number>(value: unknown, vals: readonly T[]): T | null => {
+  const one = <T extends string>(
+    value: unknown,
+    vals: readonly T[],
+  ): T | null =>
+    typeof value === "string" && (vals as readonly string[]).includes(value)
+      ? (value as T)
+      : null;
+  const oneNum = <T extends number>(
+    value: unknown,
+    vals: readonly T[],
+  ): T | null => {
     const num = n(value);
-    return num !== null && (vals as readonly number[]).includes(num) ? (num as T) : null;
+    return num !== null && (vals as readonly number[]).includes(num)
+      ? (num as T)
+      : null;
   };
 
   const deadlineRecord = asRecord(record.deadline);
@@ -912,31 +1040,63 @@ export function normalizeExtraction(obj: unknown): DiaGuruTaskExtraction | null 
   const scheduled_time = scheduledRecord
     ? {
       datetime: s(scheduledRecord.datetime),
-      precision: one(scheduledRecord.precision, ["exact", "approximate"] as const),
+      precision: one(
+        scheduledRecord.precision,
+        [
+          "exact",
+          "approximate",
+        ] as const,
+      ),
       source: one(scheduledRecord.source, ["explicit", "inferred"] as const),
     }
     : null;
   const windowRecord = asRecord(record.execution_window);
   const execution_window = windowRecord
     ? {
-      relation: one(windowRecord.relation, [
-        "before_deadline",
-        "after_deadline",
-        "around_scheduled",
-        "between",
-        "on_day",
-        "anytime",
-      ] as const),
+      relation: one(
+        windowRecord.relation,
+        [
+          "before_deadline",
+          "after_deadline",
+          "around_scheduled",
+          "between",
+          "on_day",
+          "anytime",
+        ] as const,
+      ),
       start: windowRecord.start === null ? null : s(windowRecord.start),
       end: windowRecord.end === null ? null : s(windowRecord.end),
-      source: one(windowRecord.source, ["explicit", "inferred", "default"] as const),
+      source: one(
+        windowRecord.source,
+        [
+          "explicit",
+          "inferred",
+          "default",
+        ] as const,
+      ),
     }
     : null;
   const prefRecord = asRecord(record.time_preferences);
   const time_preferences = prefRecord
     ? {
-      time_of_day: one(prefRecord.time_of_day, ["morning", "afternoon", "evening", "night"] as const),
-      day: one(prefRecord.day, ["today", "tomorrow", "specific_date", "any"] as const),
+      time_of_day: one(
+        prefRecord.time_of_day,
+        [
+          "morning",
+          "afternoon",
+          "evening",
+          "night",
+        ] as const,
+      ),
+      day: one(
+        prefRecord.day,
+        [
+          "today",
+          "tomorrow",
+          "specific_date",
+          "any",
+        ] as const,
+      ),
     }
     : null;
 
@@ -945,18 +1105,40 @@ export function normalizeExtraction(obj: unknown): DiaGuruTaskExtraction | null 
     ? {
       urgency: oneNum(importanceRecord.urgency, [1, 2, 3, 4, 5] as const),
       impact: oneNum(importanceRecord.impact, [1, 2, 3, 4, 5] as const),
-      reschedule_penalty: oneNum(importanceRecord.reschedule_penalty, [0, 1, 2, 3] as const),
+      reschedule_penalty: oneNum(
+        importanceRecord.reschedule_penalty,
+        [
+          0,
+          1,
+          2,
+          3,
+        ] as const,
+      ),
       blocking: Boolean(importanceRecord.blocking),
-      rationale: typeof importanceRecord.rationale === "string" ? importanceRecord.rationale : "",
+      rationale: typeof importanceRecord.rationale === "string"
+        ? importanceRecord.rationale
+        : "",
     }
     : null;
   const flexibilityRecord = asRecord(record.flexibility);
   const flexibility = flexibilityRecord
     ? {
       cannot_overlap: Boolean(flexibilityRecord.cannot_overlap),
-      start_flexibility: one(flexibilityRecord.start_flexibility, ["hard", "soft", "anytime"] as const) ?? "soft",
-      duration_flexibility:
-        one(flexibilityRecord.duration_flexibility, ["fixed", "split_allowed"] as const) ?? "fixed",
+      start_flexibility: one(
+        flexibilityRecord.start_flexibility,
+        [
+          "hard",
+          "soft",
+          "anytime",
+        ] as const,
+      ) ?? "soft",
+      duration_flexibility: one(
+        flexibilityRecord.duration_flexibility,
+        [
+          "fixed",
+          "split_allowed",
+        ] as const,
+      ) ?? "fixed",
       min_chunk_minutes: n(flexibilityRecord.min_chunk_minutes),
       max_splits: n(flexibilityRecord.max_splits),
     }
@@ -973,10 +1155,22 @@ export function normalizeExtraction(obj: unknown): DiaGuruTaskExtraction | null 
     flexibility,
     kind: one(
       record.kind,
-      ["task", "appointment", "call", "meeting", "study", "errand", "other", "routine.sleep", "routine.meal"] as const,
+      [
+        "task",
+        "appointment",
+        "call",
+        "meeting",
+        "study",
+        "errand",
+        "other",
+        "routine.sleep",
+        "routine.meal",
+      ] as const,
     ),
     missing: Array.isArray(record.missing) ? record.missing.map(String) : [],
-    clarifying_question: record.clarifying_question == null ? null : String(record.clarifying_question),
+    clarifying_question: record.clarifying_question == null
+      ? null
+      : String(record.clarifying_question),
     notes: Array.isArray(record.notes) ? record.notes.map(String) : [],
     policy: normalizePolicy(record.policy),
   };
@@ -985,18 +1179,24 @@ export function normalizeExtraction(obj: unknown): DiaGuruTaskExtraction | null 
 function normalizePolicy(value: unknown): DiaGuruTaskExtraction["policy"] {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  const applied = typeof record.applied === "boolean" ? record.applied : Boolean(record.applied);
+  const applied = typeof record.applied === "boolean"
+    ? record.applied
+    : Boolean(record.applied);
   const kind = record.kind === "before_sleep" ? "before_sleep" : null;
   const variant =
     record.variant === "working_hours" || record.variant === "sleep_fallback"
       ? record.variant
       : null;
-  const chosen = typeof record.chosen_local_time === "string" ? record.chosen_local_time : null;
+  const chosen = typeof record.chosen_local_time === "string"
+    ? record.chosen_local_time
+    : null;
   if (!kind || !variant || !chosen) return null;
   return { applied, kind, variant, chosen_local_time: chosen };
 }
 
-export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMapping {
+export function mapExtractionToCapture(
+  ex: DiaGuruTaskExtraction,
+): CaptureMapping {
   // --- Pull raw values (lossless) ---
   const scheduledAt = ex.scheduled_time?.datetime ?? null;
   const scheduledSource = ex.scheduled_time?.source ?? null;
@@ -1013,8 +1213,7 @@ export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMappin
   const hasScheduled = Boolean(scheduledAt);
 
   // Treat these as "window-ish" in V1. (around_scheduled is critical for “in 30 minutes”.)
-  const isWindowRelation =
-    windowRelation === "between" ||
+  const isWindowRelation = windowRelation === "between" ||
     windowRelation === "on_day" ||
     windowRelation === "around_scheduled" ||
     windowRelation === "before_deadline" ||
@@ -1023,7 +1222,9 @@ export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMappin
   // Only consider it a usable window if we have at least one bound.
   const hasWindow = Boolean(isWindowRelation && (windowStart || windowEnd));
 
-  const scheduledExplicit = Boolean(hasScheduled && scheduledSource === "explicit");
+  const scheduledExplicit = Boolean(
+    hasScheduled && scheduledSource === "explicit",
+  );
 
   // --- Defaults (but keep lossless columns initialized from ex when possible) ---
   let constraint_type: CaptureMapping["constraint_type"] = "flexible";
@@ -1079,7 +1280,8 @@ export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMappin
     original_target_time = scheduledAt;
     start_target_at = scheduledAt;
 
-    is_soft_start = scheduledPrecision === "approximate" || scheduledSource === "inferred";
+    is_soft_start = scheduledPrecision === "approximate" ||
+      scheduledSource === "inferred";
   }
 
   // --- Build mapping (include metadata so you can debug later) ---
@@ -1117,13 +1319,18 @@ export function mapExtractionToCapture(ex: DiaGuruTaskExtraction): CaptureMappin
   return captureMapping;
 }
 
-
 function captureProposalReason(ex: DiaGuruTaskExtraction): string {
   const bits: string[] = [];
   if (ex.deadline?.datetime) bits.push(`deadline=${ex.deadline.datetime}`);
-  if (ex.scheduled_time?.datetime) bits.push(`scheduled=${ex.scheduled_time.datetime}`);
-  if (ex.execution_window?.relation) bits.push(`window=${ex.execution_window.relation}`);
-  if (ex.time_preferences?.time_of_day) bits.push(`pref=${ex.time_preferences.time_of_day}`);
+  if (ex.scheduled_time?.datetime) {
+    bits.push(`scheduled=${ex.scheduled_time.datetime}`);
+  }
+  if (ex.execution_window?.relation) {
+    bits.push(`window=${ex.execution_window.relation}`);
+  }
+  if (ex.time_preferences?.time_of_day) {
+    bits.push(`pref=${ex.time_preferences.time_of_day}`);
+  }
   return `Mapped from extraction (${bits.join(", ")})`;
 }
 
@@ -1143,7 +1350,9 @@ function applyRoutineNormalization(args: {
   const { extraction, content, timezone, referenceNow } = args;
   const normalizedText = content.toLowerCase();
   const mentionsSleep = /\b(sleep|nap|bed ?time)\b/i.test(content);
-  const mentionsMeal = /\b(eat|meal|breakfast|lunch|dinner|snack)\b/i.test(content);
+  const mentionsMeal = /\b(eat|meal|breakfast|lunch|dinner|snack)\b/i.test(
+    content,
+  );
 
   if (mentionsSleep) {
     normalizeSleepExtraction(extraction, timezone, referenceNow);
@@ -1156,7 +1365,11 @@ function applyRoutineNormalization(args: {
   }
 }
 
-function normalizeSleepExtraction(extraction: DiaGuruTaskExtraction, timezone: string, referenceNow: Date) {
+function normalizeSleepExtraction(
+  extraction: DiaGuruTaskExtraction,
+  timezone: string,
+  referenceNow: Date,
+) {
   extraction.kind = "routine.sleep";
   const existingRationale = extraction.importance?.rationale;
   const importance = extraction.importance ?? {
@@ -1166,9 +1379,17 @@ function normalizeSleepExtraction(extraction: DiaGuruTaskExtraction, timezone: s
     blocking: false,
     rationale: existingRationale ?? "Sleep routine normalized.",
   };
-  importance.urgency = Math.min(importance.urgency ?? 2, 3) as 1 | 2 | 3 | 4 | 5;
+  importance.urgency = Math.min(importance.urgency ?? 2, 3) as
+    | 1
+    | 2
+    | 3
+    | 4
+    | 5;
   importance.impact = Math.min(importance.impact ?? 2, 3) as 1 | 2 | 3 | 4 | 5;
-  importance.reschedule_penalty = Math.min(importance.reschedule_penalty ?? 1, 1) as 0 | 1 | 2 | 3;
+  importance.reschedule_penalty = Math.min(
+    importance.reschedule_penalty ?? 1,
+    1,
+  ) as 0 | 1 | 2 | 3;
   importance.blocking = false;
   extraction.importance = importance;
 
@@ -1182,7 +1403,10 @@ function normalizeSleepExtraction(extraction: DiaGuruTaskExtraction, timezone: s
   flexibility.cannot_overlap = true;
   flexibility.start_flexibility = "soft";
   flexibility.duration_flexibility = "fixed";
-  flexibility.min_chunk_minutes = Math.max(flexibility.min_chunk_minutes ?? 60, 30);
+  flexibility.min_chunk_minutes = Math.max(
+    flexibility.min_chunk_minutes ?? 60,
+    30,
+  );
   flexibility.max_splits = 1;
   extraction.flexibility = flexibility;
 
@@ -1228,7 +1452,12 @@ function normalizeMealExtraction(
     blocking: false,
     rationale: existingRationale ?? "Meal routine normalized.",
   };
-  importance.urgency = Math.min(importance.urgency ?? 2, 2) as 1 | 2 | 3 | 4 | 5;
+  importance.urgency = Math.min(importance.urgency ?? 2, 2) as
+    | 1
+    | 2
+    | 3
+    | 4
+    | 5;
   importance.impact = Math.min(importance.impact ?? 2, 2) as 1 | 2 | 3 | 4 | 5;
   importance.reschedule_penalty = 0;
   importance.blocking = false;
@@ -1244,7 +1473,10 @@ function normalizeMealExtraction(
   flexibility.cannot_overlap = false;
   flexibility.start_flexibility = "soft";
   flexibility.duration_flexibility = "fixed";
-  flexibility.min_chunk_minutes = Math.max(flexibility.min_chunk_minutes ?? 30, 15);
+  flexibility.min_chunk_minutes = Math.max(
+    flexibility.min_chunk_minutes ?? 30,
+    15,
+  );
   flexibility.max_splits = 1;
   extraction.flexibility = flexibility;
 
@@ -1271,7 +1503,11 @@ function normalizeMealExtraction(
   }
 }
 
-function applyBeforeSleepDeadline(extraction: DiaGuruTaskExtraction, timezone: string, referenceNow: Date) {
+function applyBeforeSleepDeadline(
+  extraction: DiaGuruTaskExtraction,
+  timezone: string,
+  referenceNow: Date,
+) {
   const hasDeadline = Boolean(extraction.deadline?.datetime);
   const hasWindow = Boolean(extraction.execution_window);
   let appliedDeadline: string | null = null;
@@ -1283,7 +1519,11 @@ function applyBeforeSleepDeadline(extraction: DiaGuruTaskExtraction, timezone: s
       hour: 22,
       minute: 0,
     });
-    extraction.deadline = { datetime: appliedDeadline, kind: "soft", source: "inferred" };
+    extraction.deadline = {
+      datetime: appliedDeadline,
+      kind: "soft",
+      source: "inferred",
+    };
     extraction.policy = {
       applied: true,
       kind: "before_sleep",
@@ -1304,14 +1544,20 @@ function applyBeforeSleepDeadline(extraction: DiaGuruTaskExtraction, timezone: s
 }
 
 function hasExplicitWindow(extraction: DiaGuruTaskExtraction) {
-  return Boolean(extraction.execution_window?.start && extraction.execution_window?.end);
+  return Boolean(
+    extraction.execution_window?.start && extraction.execution_window?.end,
+  );
 }
 
 function inferMealWindow(text: string) {
   if (/\bbreakfast\b/.test(text) || /\bmorning\b/.test(text)) {
     return { startHour: 7, startMinute: 30, endHour: 9, endMinute: 30 };
   }
-  if (/\blunch\b/.test(text) || /\bmidday\b/.test(text) || /\bnoon\b/.test(text)) {
+  if (
+    /\blunch\b/.test(text) ||
+    /\bmidday\b/.test(text) ||
+    /\bnoon\b/.test(text)
+  ) {
     return { startHour: 12, startMinute: 0, endHour: 14, endMinute: 0 };
   }
   if (/\bdinner\b/.test(text) || /\bevening\b/.test(text)) {
@@ -1328,16 +1574,30 @@ function buildZonedDateTime(args: {
   dayOffset?: number;
 }) {
   const { timezone, reference, hour, minute } = args;
-  const dayOffset = args.dayOffset ?? computeDayOffset(reference, timezone, hour, minute);
+  const dayOffset = args.dayOffset ??
+    computeDayOffset(reference, timezone, hour, minute);
   const dateParts = getLocalDateParts(reference, timezone);
   const utcGuess = new Date(
-    Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day + dayOffset, hour, minute, 0, 0),
+    Date.UTC(
+      dateParts.year,
+      dateParts.month - 1,
+      dateParts.day + dayOffset,
+      hour,
+      minute,
+      0,
+      0,
+    ),
   );
   const offsetMinutes = getTimezoneOffsetMinutes(utcGuess, timezone);
   return new Date(utcGuess.getTime() - offsetMinutes * 60000).toISOString();
 }
 
-function computeDayOffset(reference: Date, timezone: string, targetHour: number, targetMinute: number) {
+function computeDayOffset(
+  reference: Date,
+  timezone: string,
+  targetHour: number,
+  targetMinute: number,
+) {
   const { hour, minute } = getLocalTimeParts(reference, timezone);
   if (hour > targetHour) return 1;
   if (hour === targetHour && minute >= targetMinute) return 1;
@@ -1380,5 +1640,3 @@ function getTimezoneOffsetMinutes(date: Date, timeZone: string) {
   const utcDate = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
   return (localDate.getTime() - utcDate.getTime()) / 60000;
 }
-
-
