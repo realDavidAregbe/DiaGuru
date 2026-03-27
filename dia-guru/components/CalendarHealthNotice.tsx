@@ -27,47 +27,56 @@ export function CalendarHealthNotice({
   return (
     <View style={styles.container}>
       {showError ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorTitle}>Calendar check failed</Text>
-          <Text style={styles.errorText}>
+        <View style={[styles.noticeCard, styles.errorCard]}>
+          <View style={styles.headerRow}>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>Calendar</Text>
+            </View>
+            <Text style={styles.statusLabel}>Needs attention</Text>
+          </View>
+          <Text style={styles.noticeTitle}>Calendar check failed</Text>
+          <Text style={styles.noticeText}>
             {error ?? 'We could not verify your Google Calendar link right now.'}
           </Text>
           <TouchableOpacity
             onPress={onRetry}
-            style={[styles.retryButton, checking && styles.retryButtonDisabled]}
+            style={[styles.primaryButton, checking && styles.buttonDisabled]}
             disabled={checking}
             accessibilityRole="button"
           >
-            <Text style={styles.retryButtonText}>{checking ? 'Retrying…' : 'Try again'}</Text>
+            <Text style={styles.primaryButtonText}>{checking ? 'Retrying...' : 'Try again'}</Text>
           </TouchableOpacity>
         </View>
       ) : null}
 
       {showBanner ? (
-        <View style={styles.bannerBox}>
-          <View style={styles.bannerHeader}>
-            <Text style={styles.bannerTitle}>Reconnect Google Calendar</Text>
+        <View style={[styles.noticeCard, styles.warningCard]}>
+          <View style={styles.headerRow}>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>Sync</Text>
+            </View>
             {checking ? <ActivityIndicator size="small" color="#92400E" /> : null}
           </View>
-          <Text style={styles.bannerText}>
+          <Text style={styles.noticeTitle}>Reconnect Google Calendar</Text>
+          <Text style={styles.noticeText}>
             DiaGuru needs access to your calendar to plan sessions automatically. Reconnect now to
             resume scheduling.
           </Text>
-          <View style={styles.bannerActions}>
+          <View style={styles.actionRow}>
             <TouchableOpacity
               onPress={onReconnect}
-              style={styles.bannerPrimary}
+              style={styles.primaryButton}
               accessibilityRole="button"
             >
-              <Text style={styles.bannerPrimaryText}>Reconnect</Text>
+              <Text style={styles.primaryButtonText}>Reconnect</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={onRetry}
-              style={[styles.bannerSecondary, checking && styles.bannerSecondaryDisabled]}
+              style={[styles.secondaryButton, checking && styles.buttonDisabled]}
               disabled={checking}
               accessibilityRole="button"
             >
-              <Text style={styles.bannerSecondaryText}>Check again</Text>
+              <Text style={styles.secondaryButtonText}>Check again</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -78,95 +87,95 @@ export function CalendarHealthNotice({
 
 const styles = StyleSheet.create({
   container: {
-    gap: 12,
-    marginBottom: 16,
+    gap: 10,
+    marginBottom: 12,
   },
-  errorBox: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#EF4444',
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 14,
-    gap: 8,
-  },
-  errorTitle: {
-    fontWeight: '700',
-    color: '#991B1B',
-    fontSize: 15,
-  },
-  errorText: {
-    color: '#7F1D1D',
-    fontSize: 13,
-  },
-  retryButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#991B1B',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-  },
-  retryButtonDisabled: {
-    backgroundColor: '#B91C1C',
-    opacity: 0.7,
-  },
-  retryButtonText: {
-    color: '#FEE2E2',
-    fontWeight: '600',
-  },
-  bannerBox: {
-    backgroundColor: '#FEF3C7',
-    borderColor: '#F59E0B',
-    borderRadius: 12,
+  noticeCard: {
+    borderRadius: 14,
     borderWidth: 1,
     padding: 14,
     gap: 10,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E2E8F0',
   },
-  bannerHeader: {
+  errorCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#F87171',
+  },
+  warningCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#94A3B8',
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
-  bannerTitle: {
+  badge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  badgeText: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  statusLabel: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  noticeTitle: {
+    color: '#111827',
+    fontSize: 16,
     fontWeight: '700',
-    color: '#92400E',
-    fontSize: 15,
-    flex: 1,
   },
-  bannerText: {
-    color: '#92400E',
+  noticeText: {
+    color: '#475569',
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 19,
   },
-  bannerActions: {
+  actionRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
-  bannerPrimary: {
-    backgroundColor: '#F59E0B',
+  primaryButton: {
+    backgroundColor: '#111827',
+    borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 8,
-    flexShrink: 0,
+    minWidth: 120,
+    alignItems: 'center',
   },
-  bannerPrimaryText: {
+  primaryButtonText: {
+    color: '#FFFFFF',
     fontWeight: '700',
-    color: '#1F2937',
   },
-  bannerSecondary: {
+  secondaryButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#F59E0B',
+    borderColor: '#D1D5DB',
     paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 8,
-    flexShrink: 0,
+    minWidth: 120,
+    alignItems: 'center',
   },
-  bannerSecondaryDisabled: {
-    opacity: 0.6,
-  },
-  bannerSecondaryText: {
+  secondaryButtonText: {
+    color: '#111827',
     fontWeight: '600',
-    color: '#92400E',
+  },
+  buttonDisabled: {
+    opacity: 0.65,
   },
 });
 

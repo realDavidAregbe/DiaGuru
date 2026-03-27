@@ -96,7 +96,7 @@ Follow these steps to run DiaGuru locally and deploy supporting services.
    git clone https://github.com/realDavidAregbe/DiaGuru.git
    cd DiaGuru/dia-guru
    npm ci
-   npx expo start
+   npm run dev
    ```
 2. (Optional) Launch Duckling locally
    ```bash
@@ -137,7 +137,7 @@ supabase functions deploy schedule-run
 Run the mobile app:
 
 ```bash
-npx expo start
+npm run dev
 ```
 
 Scan the QR code with Expo Go or start an emulator/simulator.

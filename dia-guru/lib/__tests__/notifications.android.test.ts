@@ -62,9 +62,27 @@ describe('notifications (android)', () => {
     expect(ok).toBe(true);
   });
 
+  it('prompts for permission when current state is not granted/provisional', async () => {
+    Notifications.getPermissionsAsync.mockResolvedValueOnce({ granted: false, ios: { status: 0 } });
+    Notifications.requestPermissionsAsync.mockResolvedValueOnce({ granted: true, ios: { status: 0 } });
+    const ok = await requestNotificationPermission();
+    expect(ok).toBe(true);
+    expect(Notifications.requestPermissionsAsync).toHaveBeenCalledTimes(1);
+  });
+
   it('cancels scheduled notification with valid id on android', async () => {
     await cancelScheduledNotification('id-1');
     expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith('id-1');
+  });
+
+  it('swallows cancellation errors and logs for diagnostics', async () => {
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    Notifications.cancelScheduledNotificationAsync.mockRejectedValueOnce(new Error('boom'));
+
+    await cancelScheduledNotification('id-2');
+
+    expect(consoleSpy).toHaveBeenCalledWith('cancel notification failed', expect.any(Error));
+    consoleSpy.mockRestore();
   });
 });
 

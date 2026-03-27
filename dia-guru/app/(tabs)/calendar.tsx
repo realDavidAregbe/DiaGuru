@@ -1,5 +1,5 @@
-import { useSupabaseSession } from '@/hooks/useSupabaseSession';
 import { fetchUpcomingEvents, SimpleEvent } from '@/lib/calendar';
+import { useSupabaseSession } from '@/hooks/useSupabaseSession';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -59,31 +59,54 @@ export default function CalendarTab() {
   }, [loadEvents, userId]);
 
   const eventsContent = useMemo(() => {
-    if (eventsLoading) return <ActivityIndicator />;
-    if (eventsError) return <Text style={styles.errorText}>{eventsError}</Text>;
+    if (eventsLoading) {
+      return <ActivityIndicator />;
+    }
+    if (eventsError) {
+      return <Text style={styles.errorText}>{eventsError}</Text>;
+    }
     if (events.length === 0) {
-      return <Text style={styles.sectionSubtext}>Nothing scheduled in the next few days.</Text>;
+      return <Text style={styles.emptyText}>Nothing scheduled in the next few days.</Text>;
     }
 
     return events.map((event) => <EventRow key={event.id} e={event} />);
   }, [events, eventsError, eventsLoading]);
 
   return (
-    <SafeAreaView style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }] }>
+    <SafeAreaView style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
       <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Upcoming calendar</Text>
-          <Text style={styles.sectionSubtext}>
-            DiaGuru tags its sessions with [DG]. External events stay untouched so your original plans remain.
+        <View style={styles.heroCard}>
+          <Text style={styles.eyebrow}>Calendar</Text>
+          <Text style={styles.heroTitle}>See DiaGuru sessions alongside everything else.</Text>
+          <Text style={styles.heroSubtitle}>
+            The next {PREVIEW_WINDOW} events are shown here. DiaGuru-created items remain tagged with
+            [DG] so they are easy to spot.
           </Text>
-          <View style={{ marginTop: 12, gap: 12 }}>{eventsContent}</View>
+          <View style={styles.statRow}>
+            <Stat label="Loaded" value={`${events.length}`} />
+            <Stat label="View" value={eventsLoading ? 'Syncing' : 'Upcoming'} />
+            <Stat label="Mode" value="Read only" />
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Upcoming calendar</Text>
+          <Text style={styles.sectionSubtitle}>
+            DiaGuru tags its sessions with [DG]. External events stay untouched so your original plans
+            remain.
+          </Text>
+          <View style={styles.eventList}>{eventsContent}</View>
           <View style={styles.footer}>
-            <TouchableOpacity onPress={() => Alert.alert('Coming soon', 'Calendar filters and quick actions are coming soon.') }>
-              <Text style={styles.linkAction}>Calendar tips & actions</Text>
+            <TouchableOpacity
+              onPress={() =>
+                Alert.alert('Coming soon', 'Calendar filters and quick actions are coming soon.')
+              }
+            >
+              <Text style={styles.linkAction}>Calendar tips and actions</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -95,7 +118,8 @@ export default function CalendarTab() {
 function EventRow({ e }: { e: SimpleEvent }) {
   const start = e.start?.dateTime ?? e.start?.date;
   const end = e.end?.dateTime ?? e.end?.date;
-  const isDiaGuru = e.extendedProperties?.private?.diaGuru === 'true' || (e.summary ?? '').trim().startsWith('[DG]');
+  const isDiaGuru =
+    e.extendedProperties?.private?.diaGuru === 'true' || (e.summary ?? '').trim().startsWith('[DG]');
 
   const startLabel = start
     ? new Date(start).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -108,7 +132,11 @@ function EventRow({ e }: { e: SimpleEvent }) {
         <Text style={[styles.eventTitle, isDiaGuru && styles.diaGuruTitle]} numberOfLines={2}>
           {e.summary ?? '(no title)'}
         </Text>
-        {isDiaGuru ? <Text style={styles.eventBadge}>DG</Text> : null}
+        {isDiaGuru ? (
+          <View style={styles.eventBadge}>
+            <Text style={styles.eventBadgeText}>DG</Text>
+          </View>
+        ) : null}
       </View>
       <Text style={styles.eventTime}>
         {startLabel}
@@ -119,33 +147,156 @@ function EventRow({ e }: { e: SimpleEvent }) {
   );
 }
 
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.statCard}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={styles.statValue}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F3F4F6' },
-  scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingBottom: 32, gap: 24 },
-  sectionCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    gap: 16,
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
   },
-  sectionTitle: { fontSize: 20, fontWeight: '700', color: '#111827' },
-  sectionSubtext: { color: '#6B7280' },
-  linkAction: { color: '#2563EB', fontWeight: '600' },
-  footer: { borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#E5E7EB', paddingTop: 12 },
+  content: {
+    gap: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+  },
+  heroCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 18,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  eyebrow: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  heroTitle: {
+    color: '#111827',
+    fontSize: 24,
+    fontWeight: '700',
+    lineHeight: 29,
+  },
+  heroSubtitle: {
+    color: '#475569',
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  statRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  statCard: {
+    flexGrow: 1,
+    minWidth: 90,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  statLabel: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  statValue: {
+    color: '#111827',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 18,
+    gap: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  sectionTitle: {
+    color: '#111827',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  sectionSubtitle: {
+    color: '#475569',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  eventList: {
+    gap: 12,
+  },
   eventCard: {
     padding: 14,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#E2E8F0',
     backgroundColor: '#FFFFFF',
     gap: 6,
   },
-  eventHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  eventTitle: { fontSize: 16, fontWeight: '600', color: '#111827', flex: 1, paddingRight: 8 },
-  eventTime: { color: '#4B5563' },
-  eventBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: '#EEF2FF', color: '#2563EB', fontWeight: '700' },
-  diaGuruTag: { color: '#2563EB', fontSize: 12, fontWeight: '600' },
-  diaGuruTitle: { color: '#2563EB' },
-  errorText: { color: '#DC2626' },
+  eventHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+  },
+  eventTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    flex: 1,
+    paddingRight: 8,
+  },
+  eventTime: {
+    color: '#4B5563',
+  },
+  eventBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#F1F5F9',
+  },
+  eventBadgeText: {
+    color: '#475569',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  diaGuruTag: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  diaGuruTitle: {
+    color: '#334155',
+  },
+  emptyText: {
+    color: '#475569',
+  },
+  errorText: {
+    color: '#DC2626',
+  },
+  linkAction: {
+    color: '#334155',
+    fontWeight: '600',
+  },
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E2E8F0',
+    paddingTop: 12,
+  },
 });
