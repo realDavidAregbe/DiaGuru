@@ -826,6 +826,8 @@ export default function HomeTab() {
   const [statusNotice, setStatusNotice] = useState<HomeStatusNotice | null>(
     null,
   );
+  const [captureDetailsOpen, setCaptureDetailsOpen] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
 
   const [refreshing, setRefreshing] = useState(false);
   const [scheduling, setScheduling] = useState(false);
@@ -1723,6 +1725,20 @@ export default function HomeTab() {
     [upcomingScheduled],
   );
   const followUpVisible = Boolean(followUpState);
+  const selectedImportanceLabel =
+    IMPORTANCE_LEVELS.find((level) => level.value === importance)?.label ??
+    "Medium";
+  const normalizeCaptureDetailsSummary = (value: string) => value.replace(
+    /[^\x20-\x7E]+/g,
+    " - ",
+  );
+  const captureDetailsSummary = `${
+    minutesInput.trim().length > 0 ? `${minutesInput.trim()} min` : "Auto duration"
+  } • ${selectedImportanceLabel} priority`;
+
+  const captureDetailsSummaryText = normalizeCaptureDetailsSummary(
+    captureDetailsSummary,
+  );
 
   const handleCompletionAction = useCallback(
     async (capture: Capture, action: CaptureStatus | "reschedule") => {
@@ -1770,45 +1786,65 @@ export default function HomeTab() {
         style={styles.ideaInput}
       />
 
-      <View style={styles.formRow}>
-        <View style={styles.formField}>
-          <Text style={styles.fieldLabel}>Est. minutes</Text>
-          <TextInput
-            value={minutesInput}
-            onChangeText={setMinutesInput}
-            placeholder="30"
-            placeholderTextColor="#9CA3AF"
-            keyboardType="numeric"
-            style={styles.numberInput}
-          />
+      <TouchableOpacity
+        style={styles.disclosureRow}
+        onPress={() => setCaptureDetailsOpen((value) => !value)}
+        activeOpacity={0.85}
+      >
+        <View style={styles.disclosureCopy}>
+          <Text style={styles.disclosureTitle}>Details</Text>
+          <Text style={styles.disclosureSummary}>
+            {captureDetailsSummaryText}
+          </Text>
         </View>
+        <Text style={styles.disclosureAction}>
+          {captureDetailsOpen ? "Hide" : "Edit"}
+        </Text>
+      </TouchableOpacity>
 
-        <View style={[styles.formField, { flex: 1 }]}>
-          <Text style={styles.fieldLabel}>Importance</Text>
-          <View style={styles.importanceRow}>
-            {IMPORTANCE_LEVELS.map((level) => (
-              <TouchableOpacity
-                key={level.value}
-                style={[
-                  styles.importanceChip,
-                  importance === level.value && styles.importanceChipActive,
-                ]}
-                onPress={() => setImportance(level.value)}
-              >
-                <Text
-                  style={[
-                    styles.importanceChipText,
-                    importance === level.value &&
-                      styles.importanceChipTextActive,
-                  ]}
-                >
-                  {level.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+      {captureDetailsOpen ? (
+        <View style={styles.disclosureBody}>
+          <View style={styles.formRow}>
+            <View style={styles.formField}>
+              <Text style={styles.fieldLabel}>Est. minutes</Text>
+              <TextInput
+                value={minutesInput}
+                onChangeText={setMinutesInput}
+                placeholder="30"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="numeric"
+                style={styles.numberInput}
+              />
+            </View>
+
+            <View style={[styles.formField, { flex: 1 }]}>
+              <Text style={styles.fieldLabel}>Importance</Text>
+              <View style={styles.importanceRow}>
+                {IMPORTANCE_LEVELS.map((level) => (
+                  <TouchableOpacity
+                    key={level.value}
+                    style={[
+                      styles.importanceChip,
+                      importance === level.value && styles.importanceChipActive,
+                    ]}
+                    onPress={() => setImportance(level.value)}
+                  >
+                    <Text
+                      style={[
+                        styles.importanceChipText,
+                        importance === level.value &&
+                          styles.importanceChipTextActive,
+                      ]}
+                    >
+                      {level.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
           </View>
         </View>
-      </View>
+      ) : null}
 
       <TouchableOpacity
         style={[
@@ -1833,35 +1869,58 @@ export default function HomeTab() {
         </Text>
       ) : (
         <View style={{ gap: 12 }}>
-          <View style={styles.captureListHeader}>
-            <Text style={styles.sectionSubtitle}>Next up</Text>
-            <TouchableOpacity
-              disabled={scheduling || pending.length === 0}
-              onPress={() => scheduleEntireQueue()}
-              style={[
-                styles.secondaryButton,
-                (scheduling || pending.length === 0) &&
-                  styles.primaryButtonDisabled,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.secondaryButtonText,
-                  (scheduling || pending.length === 0) &&
-                    styles.secondaryButtonTextDisabled,
-                ]}
-              >
-                Re-run scheduling
+          <TouchableOpacity
+            style={styles.disclosureRow}
+            onPress={() => setQueueOpen((value) => !value)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.disclosureCopy}>
+              <Text style={styles.disclosureTitle}>Queue</Text>
+              <Text style={styles.disclosureSummary}>
+                {pending.length} {pending.length === 1 ? "item" : "items"} waiting
               </Text>
-            </TouchableOpacity>
-          </View>
-          {pendingPreview.map((capture, index) => (
-            <CaptureCard key={capture.id} capture={capture} rank={index + 1} />
-          ))}
-          {queueExtras > 0 ? (
-            <Text
-              style={styles.sectionSubtext}
-            >{`+ ${queueExtras} more ${queueExtras === 1 ? "item" : "items"} in queue`}</Text>
+            </View>
+            <Text style={styles.disclosureAction}>
+              {queueOpen ? "Hide" : "View"}
+            </Text>
+          </TouchableOpacity>
+          {queueOpen ? (
+            <View style={styles.disclosureBody}>
+              <View style={styles.captureListHeader}>
+                <Text style={styles.sectionSubtitle}>Next up</Text>
+                <TouchableOpacity
+                  disabled={scheduling || pending.length === 0}
+                  onPress={() => scheduleEntireQueue()}
+                  style={[
+                    styles.secondaryButton,
+                    (scheduling || pending.length === 0) &&
+                      styles.primaryButtonDisabled,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.secondaryButtonText,
+                      (scheduling || pending.length === 0) &&
+                        styles.secondaryButtonTextDisabled,
+                    ]}
+                  >
+                    Re-run scheduling
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {pendingPreview.map((capture, index) => (
+                <CaptureCard
+                  key={capture.id}
+                  capture={capture}
+                  rank={index + 1}
+                />
+              ))}
+              {queueExtras > 0 ? (
+                <Text
+                  style={styles.sectionSubtext}
+                >{`+ ${queueExtras} more ${queueExtras === 1 ? "item" : "items"} in queue`}</Text>
+              ) : null}
+            </View>
           ) : null}
         </View>
       )}
@@ -2306,6 +2365,38 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: "700", color: "#111827" },
   sectionSubtext: { color: "#475569" },
   sectionSubtitle: { fontSize: 16, fontWeight: "700", color: "#111827" },
+  disclosureRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: "#F8FAFC",
+  },
+  disclosureCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  disclosureTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  disclosureSummary: {
+    color: "#64748B",
+    fontSize: 13,
+  },
+  disclosureAction: {
+    color: "#334155",
+    fontWeight: "600",
+  },
+  disclosureBody: {
+    gap: 12,
+  },
   ideaInput: {
     minHeight: 80,
     borderWidth: 1,
