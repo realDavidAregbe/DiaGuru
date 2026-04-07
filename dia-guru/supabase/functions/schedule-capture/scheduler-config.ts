@@ -1,14 +1,8 @@
 import type { CaptureEntryRow } from "../types.ts";
+import { computeCapturePrioritySnapshot } from "./priority-model.ts";
 
 type SchedulerConfig = {
   workingWindow: { startHour: number; endHour: number };
-  priority: {
-    urgencyWeight: number;
-    impactWeight: number;
-    blockingBonus: number;
-    deadlineBase: number;
-    hardBonus: number;
-  };
   rigidity: {
     reschedulePenaltyWeight: number;
     rescheduleCountWeight: number;
@@ -20,6 +14,13 @@ type SchedulerConfig = {
     urgencyWeight: number;
     impactWeight: number;
     blockingWeight: number;
+    protectedTaskBonuses: {
+      appointment: number;
+      deepWork: number;
+      health: number;
+      routineMeal: number;
+      routineSleep: number;
+    };
   };
   fragmentation: {
     coefficient: number;
@@ -28,6 +29,7 @@ type SchedulerConfig = {
     baseThreshold: number;
     movePenalty: number;
     gainPerMinuteThreshold: number;
+    priorityBenefitScale: number;
   };
   limits: {
     maxMovedTasksPerRun: number;
@@ -49,13 +51,6 @@ type SchedulerConfig = {
 
 export const schedulerConfig: SchedulerConfig = {
   workingWindow: { startHour: 8, endHour: 22 },
-  priority: {
-    urgencyWeight: 10,
-    impactWeight: 6,
-    blockingBonus: 15,
-    deadlineBase: 35,
-    hardBonus: 20,
-  },
   rigidity: {
     reschedulePenaltyWeight: 20,
     rescheduleCountWeight: 10,
@@ -67,6 +62,13 @@ export const schedulerConfig: SchedulerConfig = {
     urgencyWeight: 4,
     impactWeight: 2,
     blockingWeight: 8,
+    protectedTaskBonuses: {
+      appointment: 28,
+      deepWork: 12,
+      health: 24,
+      routineMeal: 38,
+      routineSleep: 40,
+    },
   },
   fragmentation: {
     coefficient: 2,
@@ -75,6 +77,7 @@ export const schedulerConfig: SchedulerConfig = {
     baseThreshold: 12,
     movePenalty: 4,
     gainPerMinuteThreshold: 0.08,
+    priorityBenefitScale: 40,
   },
   limits: {
     maxMovedTasksPerRun: 5,
@@ -101,9 +104,9 @@ export const schedulerConfig: SchedulerConfig = {
     collaboration: [{ start: 9, end: 17 }],
     "routine.sleep": [{ start: 22, end: 31 }], // 22:00 -> 07:00 next day
     "routine.meal": [
-      { start: 7.5, end: 9.5 },  // breakfast
-      { start: 12, end: 14 },    // lunch
-      { start: 18, end: 20 },    // dinner
+      { start: 7.5, end: 9.5 }, // breakfast
+      { start: 12, end: 14 }, // lunch
+      { start: 18, end: 20 }, // dinner
     ],
   },
 };
@@ -144,54 +147,42 @@ const getEstimatedMinutes = (capture: CaptureEntryRow) => {
 };
 
 export type PrioritySnapshot = {
+  baseScore: number;
+  durationMinutes: number;
+  routineKind: string | null;
   score: number;
   perMinute: number;
   components: {
-    urgency: number;
-    impact: number;
-    blocking: number;
+    aging: number;
     deadline: number;
+    durationPenalty: number;
+    externality: number;
+    importance: number;
+    reschedulePenalty: number;
+    window: number;
   };
 };
 
-export function computePrioritySnapshot(capture: CaptureEntryRow, referenceNow: Date): PrioritySnapshot {
-  const minutes = getEstimatedMinutes(capture);
-  const urgency = capture.urgency ?? capture.importance ?? 2;
-  const impact = capture.impact ?? capture.importance ?? 2;
-  const blocking = Boolean(capture.blocking);
-  const deadlineDate = getDeadlineDate(capture);
-
-  const urgencyComponent = schedulerConfig.priority.urgencyWeight * urgency;
-  const impactComponent = schedulerConfig.priority.impactWeight * impact;
-  const blockingComponent = blocking ? schedulerConfig.priority.blockingBonus : 0;
-
-  let deadlineComponent = 0;
-  if (deadlineDate) {
-    const slackMinutes = deadlineDate.getTime() - referenceNow.getTime();
-    const slack = slackMinutes / MS_PER_MINUTE - minutes;
-    const base = schedulerConfig.priority.deadlineBase * clamp01(1 - slack / (2 * minutes));
-    const hardBonus = capture.deadline_at && capture.constraint_type === "deadline_time"
-      ? schedulerConfig.priority.hardBonus
-      : 0;
-    deadlineComponent = base + hardBonus;
-  }
-
-  const score = urgencyComponent + impactComponent + blockingComponent + deadlineComponent;
-  const perMinute = score / minutes;
+export function computePrioritySnapshot(
+  capture: CaptureEntryRow,
+  referenceNow: Date,
+): PrioritySnapshot {
+  const snapshot = computeCapturePrioritySnapshot(capture, referenceNow);
 
   return {
-    score,
-    perMinute,
-    components: {
-      urgency: urgencyComponent,
-      impact: impactComponent,
-      blocking: blockingComponent,
-      deadline: deadlineComponent,
-    },
+    baseScore: snapshot.baseScore,
+    durationMinutes: snapshot.durationMinutes,
+    routineKind: snapshot.routineKind,
+    score: snapshot.score,
+    perMinute: snapshot.perMinute,
+    components: snapshot.components,
   };
 }
 
-export function computeRigidityScore(capture: CaptureEntryRow, referenceNow: Date) {
+export function computeRigidityScore(
+  capture: CaptureEntryRow,
+  referenceNow: Date,
+) {
   const config = schedulerConfig.rigidity;
   const slackDeadline = getDeadlineDate(capture);
   const minutes = getEstimatedMinutes(capture);
@@ -202,17 +193,38 @@ export function computeRigidityScore(capture: CaptureEntryRow, referenceNow: Dat
     slackComponent = config.slackWeight * clamp01((minutes - slack) / minutes);
   }
 
+  const hint = capture.task_type_hint?.toLowerCase() ?? "";
+  const text = capture.content?.toLowerCase() ?? "";
+  let protectedTaskBonus = 0;
+  if (hint.includes("routine.sleep") || /\bsleep|bed ?time|night routine\b/.test(text)) {
+    protectedTaskBonus = config.protectedTaskBonuses.routineSleep;
+  } else if (
+    hint.includes("routine.meal") ||
+    /\b(breakfast|lunch|dinner|meal|eat)\b/.test(text)
+  ) {
+    protectedTaskBonus = config.protectedTaskBonuses.routineMeal;
+  } else if (hint.includes("appointment")) {
+    protectedTaskBonus = config.protectedTaskBonuses.appointment;
+  } else if (hint.includes("health")) {
+    protectedTaskBonus = config.protectedTaskBonuses.health;
+  } else if (hint.includes("deep_work")) {
+    protectedTaskBonus = config.protectedTaskBonuses.deepWork;
+  }
+
   return (
     (capture.reschedule_penalty ?? 0) * config.reschedulePenaltyWeight +
     (capture.reschedule_count ?? 0) * config.rescheduleCountWeight +
     (capture.deadline_at ? config.hardDeadlineWeight : 0) +
     slackComponent +
     (capture.cannot_overlap ? config.cannotOverlapWeight : 0) +
-    (capture.duration_flexibility === "fixed" ? config.durationFixedWeight : 0) +
+    (capture.duration_flexibility === "fixed"
+      ? config.durationFixedWeight
+      : 0) +
     (capture.start_flexibility === "hard" ? config.startHardWeight : 0) +
     (capture.urgency ?? 0) * config.urgencyWeight +
     (capture.impact ?? 0) * config.impactWeight +
-    (capture.blocking ? config.blockingWeight : 0)
+    (capture.blocking ? config.blockingWeight : 0) +
+    protectedTaskBonus
   );
 }
 
@@ -224,11 +236,15 @@ export function computeRescheduleCost(
   const rigidity = computeRigidityScore(capture, referenceNow);
   const ratio = minutesMoved / getEstimatedMinutes(capture);
   const base = ratio * rigidity;
-  const fragmentation = schedulerConfig.fragmentation.coefficient * Math.sqrt(Math.max(1, minutesMoved));
+  const fragmentation = schedulerConfig.fragmentation.coefficient *
+    Math.sqrt(Math.max(1, minutesMoved));
   return base + fragmentation;
 }
 
-export function logSchedulerEvent(event: string, payload: Record<string, unknown>) {
+export function logSchedulerEvent(
+  event: string,
+  payload: Record<string, unknown>,
+) {
   try {
     console.log(`[dg.schedule] ${event}`, payload);
   } catch {
@@ -278,7 +294,8 @@ export function evaluatePreemptionNetGain(args: {
 }): NetGainEvaluation {
   const minutesClaimed = Math.max(1, args.minutesClaimed);
   const priority = computePrioritySnapshot(args.target, args.referenceNow);
-  const benefit = priority.perMinute * minutesClaimed;
+  const benefit = priority.perMinute * minutesClaimed *
+    schedulerConfig.preemption.priorityBenefitScale;
 
   let cost = 0;
   let totalDisplacedMinutes = 0;
@@ -286,17 +303,23 @@ export function evaluatePreemptionNetGain(args: {
     const minutes = Math.max(0, displacement.minutes);
     if (minutes === 0) continue;
     totalDisplacedMinutes += minutes;
-    cost += computeRescheduleCost(displacement.capture, minutes, args.referenceNow);
+    cost += computeRescheduleCost(
+      displacement.capture,
+      minutes,
+      args.referenceNow,
+    );
   }
 
   const overlapCostMinutes = Math.max(0, args.overlapMinutes ?? minutesClaimed);
-  const overlapSoftCost = schedulerConfig.overlap.softCostPerMinute * overlapCostMinutes;
+  const overlapSoftCost = schedulerConfig.overlap.softCostPerMinute *
+    overlapCostMinutes;
 
   const net = benefit - cost - overlapSoftCost;
   const perMinuteGain = minutesClaimed > 0 ? net / minutesClaimed : 0;
   const movedTasks = args.displacements.length;
   const thresholds = {
-    base: schedulerConfig.preemption.baseThreshold + schedulerConfig.preemption.movePenalty * movedTasks,
+    base: schedulerConfig.preemption.baseThreshold +
+      schedulerConfig.preemption.movePenalty * movedTasks,
     gainPerMinute: schedulerConfig.preemption.gainPerMinuteThreshold,
     movePenalty: schedulerConfig.preemption.movePenalty,
   };
@@ -304,11 +327,13 @@ export function evaluatePreemptionNetGain(args: {
   const meetsGainPerMinuteThreshold = perMinuteGain >= thresholds.gainPerMinute;
   const limitChecks = {
     exceedsTaskCap: movedTasks > schedulerConfig.limits.maxMovedTasksPerRun,
-    exceedsMinuteCap: totalDisplacedMinutes > schedulerConfig.limits.maxTotalMinutesShifted,
+    exceedsMinuteCap:
+      totalDisplacedMinutes > schedulerConfig.limits.maxTotalMinutesShifted,
     maxMovedTasks: schedulerConfig.limits.maxMovedTasksPerRun,
     maxMinutesShifted: schedulerConfig.limits.maxTotalMinutesShifted,
   };
-  const allowed = meetsBaseThreshold && meetsGainPerMinuteThreshold && !limitChecks.exceedsTaskCap && !limitChecks.exceedsMinuteCap;
+  const allowed = meetsBaseThreshold && meetsGainPerMinuteThreshold &&
+    !limitChecks.exceedsTaskCap && !limitChecks.exceedsMinuteCap;
 
   return {
     targetPriority: {

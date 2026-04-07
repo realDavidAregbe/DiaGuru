@@ -53,10 +53,31 @@ export type PriorityInput = {
   reschedule_count?: number | null;
 };
 
+export type PriorityScoreBreakdown = {
+  durationMinutes: number;
+  score: number;
+  components: {
+    deadline: number;
+    window: number;
+    importance: number;
+    externality: number;
+    aging: number;
+    durationPenalty: number;
+    reschedulePenalty: number;
+  };
+};
+
 export function computePriorityScore(
   entry: PriorityInput,
   referenceDate = new Date(),
 ): number {
+  return computePriorityBreakdown(entry, referenceDate).score;
+}
+
+export function computePriorityBreakdown(
+  entry: PriorityInput,
+  referenceDate = new Date(),
+): PriorityScoreBreakdown {
   const durationMinutes = clamp(
     entry.estimated_minutes ?? DEFAULT_DURATION_MINUTES,
     MIN_DURATION_MINUTES,
@@ -65,31 +86,50 @@ export function computePriorityScore(
   const durationMs = durationMinutes * MS_PER_MINUTE;
   const urgNorm = clamp(((entry.urgency ?? 0) as number) / 5, 0, 1);
   const impNorm = clamp(((entry.impact ?? 0) as number) / 5, 0, 1);
-  const hasRich = (entry.urgency ?? null) !== null || (entry.impact ?? null) !== null;
-  const importanceNorm = hasRich ? 0.6 * urgNorm + 0.4 * impNorm : clamp((entry.importance ?? 1) / 3, 0, 1);
+  const hasRich = (entry.urgency ?? null) !== null ||
+    (entry.impact ?? null) !== null;
+  const importanceNorm = hasRich
+    ? 0.6 * urgNorm + 0.4 * impNorm
+    : clamp((entry.importance ?? 1) / 3, 0, 1);
   const externalityComponent = clamp((entry.externality_score ?? 0) / 3, 0, 1);
 
   const createdTs = Date.parse(entry.created_at ?? "");
-  const ageDays =
-    Number.isFinite(createdTs) && createdTs > 0
-      ? Math.max(0, (referenceDate.getTime() - createdTs) / MS_PER_DAY)
-      : 0;
+  const ageDays = Number.isFinite(createdTs) && createdTs > 0
+    ? Math.max(0, (referenceDate.getTime() - createdTs) / MS_PER_DAY)
+    : 0;
 
-  const deadlineComponent = computeDeadlineComponent(entry, referenceDate, durationMs);
+  const deadlineComponent = computeDeadlineComponent(
+    entry,
+    referenceDate,
+    durationMs,
+  );
   const windowComponent = computeWindowComponent(entry, referenceDate);
 
-  const reschedulePenalty = (entry.reschedule_count ?? 0) * RESCHEDULE_UNIT + clamp((entry.reschedule_penalty ?? 0) / 3, 0, 1);
+  const reschedulePenalty = (entry.reschedule_count ?? 0) * RESCHEDULE_UNIT +
+    clamp((entry.reschedule_penalty ?? 0) / 3, 0, 1);
   const durationPenalty = durationMs / MS_PER_HOUR;
 
-  return (
-    W_DEADLINE * deadlineComponent +
+  const score = W_DEADLINE * deadlineComponent +
     W_WINDOW * windowComponent +
     W_IMPORTANCE * importanceNorm +
     W_EXTERNAL * externalityComponent +
     W_AGING * (ageDays * AGE_GAIN_PER_DAY) -
     W_DURATION * durationPenalty -
-    W_RESCHEDULE * reschedulePenalty
-  );
+    W_RESCHEDULE * reschedulePenalty;
+
+  return {
+    durationMinutes,
+    score,
+    components: {
+      deadline: W_DEADLINE * deadlineComponent,
+      window: W_WINDOW * windowComponent,
+      importance: W_IMPORTANCE * importanceNorm,
+      externality: W_EXTERNAL * externalityComponent,
+      aging: W_AGING * (ageDays * AGE_GAIN_PER_DAY),
+      durationPenalty: W_DURATION * durationPenalty,
+      reschedulePenalty: W_RESCHEDULE * reschedulePenalty,
+    },
+  };
 }
 
 function computeDeadlineComponent(
@@ -132,7 +172,10 @@ function resolveDeadline(entry: PriorityInput) {
   if (entry.window_end) candidates.push({ iso: entry.window_end });
   if (entry.constraint_end) candidates.push({ iso: entry.constraint_end });
   if (entry.start_target_at) {
-    candidates.push({ iso: entry.start_target_at, isSoft: Boolean(entry.is_soft_start) });
+    candidates.push({
+      iso: entry.start_target_at,
+      isSoft: Boolean(entry.is_soft_start),
+    });
   }
 
   if (entry.constraint_type === "deadline_time" && entry.constraint_time) {

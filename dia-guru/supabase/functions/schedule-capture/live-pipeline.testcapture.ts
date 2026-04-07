@@ -13,11 +13,13 @@ type LiveConfig = {
   captureId: string;
   action: ScheduleAction;
   allowOverlap: boolean;
+  allowRebalance: boolean;
   allowLatePlacement: boolean;
   timezone: string | null;
   timezoneOffsetMinutes: number | undefined;
   expectedStatuses: number[];
   extraBody: Record<string, unknown>;
+  benchmarkSecret: string | null;
 };
 
 const DEFAULT_LIVE_CAPTURE_ID = "";
@@ -135,6 +137,7 @@ function resolveConfig(): LiveConfig {
       DEFAULT_LIVE_CAPTURE_ID,
     action,
     allowOverlap: readBoolEnv("LIVE_ALLOW_OVERLAP", true),
+    allowRebalance: readBoolEnv("LIVE_ALLOW_REBALANCE", true),
     allowLatePlacement: readBoolEnv("LIVE_ALLOW_LATE_PLACEMENT", true),
     timezone: readOptionalEnv("LIVE_TIMEZONE", ["TEST_TIMEZONE"]),
     timezoneOffsetMinutes,
@@ -142,6 +145,7 @@ function resolveConfig(): LiveConfig {
       readOptionalEnv("LIVE_EXPECT_STATUSES"),
     ),
     extraBody: parseExtraBody(readOptionalEnv("LIVE_EXTRA_BODY_JSON")),
+    benchmarkSecret: readOptionalEnv("BENCHMARK_SHARED_SECRET"),
   };
 
   if (missing.length > 0) {
@@ -159,9 +163,11 @@ function buildRequestBody(config: LiveConfig) {
     action: config.action,
     captureId: config.captureId,
     allowOverlap: config.allowOverlap,
+    allowRebalance: config.allowRebalance,
     allowLatePlacement: config.allowLatePlacement,
     timezone: config.timezone,
     timezoneOffsetMinutes: config.timezoneOffsetMinutes,
+    ...(config.benchmarkSecret ? { benchmarkSecret: config.benchmarkSecret } : {}),
     ...config.extraBody,
   };
 }
@@ -174,7 +180,9 @@ function logRunContext(config: LiveConfig) {
     timezone: config.timezone,
     timezoneOffsetMinutes: config.timezoneOffsetMinutes,
     allowOverlap: config.allowOverlap,
+    allowRebalance: config.allowRebalance,
     allowLatePlacement: config.allowLatePlacement,
+    benchmark: config.benchmarkSecret ? "enabled" : "disabled",
     expectedStatuses: config.expectedStatuses,
     supabaseUrl: config.supabaseUrl,
     anonKey: maskSecret(config.anonKey),

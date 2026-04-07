@@ -421,6 +421,14 @@ export type ScheduleDecision =
         llmAttempted: boolean;
         llmModel?: string | null;
         llmError?: string | null;
+        preemptionAttempted?: boolean;
+        preemptionBlockedByLock?: boolean;
+        lockReasons?: {
+          captureId?: string;
+          summary?: string;
+          reason: 'freeze' | 'stability_window' | 'missing_capture';
+        }[];
+        preemptionRejectedReason?: 'net_gain_threshold';
       };
     };
 
