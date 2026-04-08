@@ -6,8 +6,13 @@ import {
   type CalendarEvent,
   collectConflictingEvents,
   computeSchedulingPlan,
+  priorityForCapture,
   resolveDeadlineFromCapture,
 } from "./scheduling-core.ts";
+import {
+  computePrioritySnapshot,
+  evaluatePreemptionNetGain,
+} from "./scheduler-config.ts";
 
 type Extraction = Parameters<typeof mapExtractionToCapture>[0];
 
@@ -408,5 +413,251 @@ Deno.test(
     assertEquals(conflicts[0].id, "evt-3");
     assertEquals(conflicts[0].diaGuru, true);
     assertEquals(conflicts[0].captureId, "cap-99");
+  },
+);
+
+Deno.test(
+  "computePrioritySnapshot stays aligned with priorityForCapture",
+  () => {
+    const now = new Date("2026-02-03T09:00:00Z");
+    const capture = makeCapture({
+      content: "Work on assignment at 7pm very important",
+      estimated_minutes: 60,
+      importance: 3,
+      urgency: 5,
+      impact: 4,
+      reschedule_penalty: 3,
+      blocking: true,
+      created_at: "2026-04-03T19:00:00Z",
+      constraint_type: "start_time",
+      constraint_time: "2026-02-03T19:00:00Z",
+      original_target_time: "2026-02-03T19:00:00Z",
+      start_target_at: "2026-02-03T19:00:00Z",
+      window_start: "2026-02-03T18:30:00Z",
+      window_end: "2026-02-03T19:30:00Z",
+      task_type_hint: "study",
+    });
+
+    const priority = priorityForCapture(capture, now);
+    const snapshot = computePrioritySnapshot(capture, now);
+
+    assertEquals(snapshot.score, priority);
+    assertEquals(snapshot.perMinute, priority / 60);
+  },
+);
+
+Deno.test(
+  "evaluatePreemptionNetGain uses the same unified target priority score",
+  () => {
+    const now = new Date("2026-02-03T09:00:00Z");
+    const target = makeCapture({
+      id: "target",
+      content: "Finish proposal at 7pm very important",
+      estimated_minutes: 60,
+      importance: 3,
+      urgency: 5,
+      impact: 4,
+      reschedule_penalty: 3,
+      blocking: true,
+      constraint_type: "start_time",
+      constraint_time: "2026-02-03T19:00:00Z",
+      original_target_time: "2026-02-03T19:00:00Z",
+      start_target_at: "2026-02-03T19:00:00Z",
+      window_start: "2026-02-03T18:30:00Z",
+      window_end: "2026-02-03T19:30:00Z",
+      task_type_hint: "study",
+    });
+    const blocker = makeCapture({
+      id: "blocker",
+      content: "Sort receipts",
+      estimated_minutes: 30,
+      importance: 1,
+      urgency: 1,
+      impact: 1,
+      reschedule_penalty: 0,
+      blocking: false,
+      created_at: "2026-04-03T19:00:00Z",
+      constraint_type: "flexible",
+      duration_flexibility: "fixed",
+      start_flexibility: "soft",
+      task_type_hint: "admin",
+    });
+
+    const evaluation = evaluatePreemptionNetGain({
+      target,
+      displacements: [{ capture: blocker, minutes: 30 }],
+      minutesClaimed: 60,
+      referenceNow: now,
+    });
+
+    const priority = priorityForCapture(target, now);
+    assertEquals(evaluation.targetPriority.score, priority);
+    assertEquals(evaluation.targetPriority.perMinute, priority / 60);
+  },
+);
+
+Deno.test(
+  "evaluatePreemptionNetGain allows important exact-time study work to preempt a weak chore",
+  () => {
+    const now = new Date("2026-04-03T20:00:00Z");
+    const target = makeCapture({
+      id: "assignment",
+      content: "Work on assignment at 7pm very important",
+      estimated_minutes: 60,
+      importance: 3,
+      urgency: 5,
+      impact: 4,
+      reschedule_penalty: 3,
+      blocking: true,
+      constraint_type: "start_time",
+      constraint_time: "2026-04-08T00:00:00Z",
+      original_target_time: "2026-04-08T00:00:00Z",
+      start_target_at: "2026-04-08T00:00:00Z",
+      window_start: "2026-04-07T23:30:00Z",
+      window_end: "2026-04-08T00:30:00Z",
+      start_flexibility: "soft",
+      duration_flexibility: "split_allowed",
+      task_type_hint: "study",
+    });
+    const blocker = makeCapture({
+      id: "chore",
+      content: "Tidy the kitchen",
+      estimated_minutes: 30,
+      importance: 2,
+      urgency: 2,
+      impact: 2,
+      reschedule_penalty: 1,
+      blocking: false,
+      constraint_type: "flexible",
+      start_flexibility: "soft",
+      duration_flexibility: "fixed",
+      task_type_hint: "admin",
+    });
+
+    const evaluation = evaluatePreemptionNetGain({
+      target,
+      displacements: [{ capture: blocker, minutes: 30 }],
+      minutesClaimed: 60,
+      referenceNow: now,
+    });
+
+    assert(evaluation.allowed);
+    assert(evaluation.net > 0);
+  },
+);
+
+Deno.test(
+  "evaluatePreemptionNetGain keeps generic admin from displacing exercise",
+  () => {
+    const now = new Date("2026-04-03T20:00:00Z");
+    const target = makeCapture({
+      id: "admin-task",
+      content: "Review notes sometime tonight",
+      estimated_minutes: 45,
+      importance: 1,
+      urgency: 2,
+      impact: 2,
+      reschedule_penalty: 1,
+      blocking: false,
+      created_at: "2026-04-03T19:00:00Z",
+      constraint_type: "start_time",
+      constraint_time: "2026-04-08T00:00:00Z",
+      original_target_time: "2026-04-08T00:00:00Z",
+      start_target_at: "2026-04-08T00:00:00Z",
+      window_start: "2026-04-07T23:30:00Z",
+      window_end: "2026-04-08T00:30:00Z",
+      start_flexibility: "soft",
+      duration_flexibility: "split_allowed",
+      task_type_hint: "admin",
+    });
+    const blocker = makeCapture({
+      id: "workout",
+      content: "Workout at 7pm",
+      estimated_minutes: 60,
+      importance: 2,
+      urgency: 3,
+      impact: 3,
+      reschedule_penalty: 2,
+      blocking: false,
+      created_at: "2026-04-03T19:00:00Z",
+      constraint_type: "start_time",
+      constraint_time: "2026-04-08T00:00:00Z",
+      original_target_time: "2026-04-08T00:00:00Z",
+      start_target_at: "2026-04-08T00:00:00Z",
+      window_start: "2026-04-07T23:45:00Z",
+      window_end: "2026-04-08T00:15:00Z",
+      cannot_overlap: true,
+      start_flexibility: "soft",
+      duration_flexibility: "fixed",
+      task_type_hint: "health",
+    });
+
+    const evaluation = evaluatePreemptionNetGain({
+      target,
+      displacements: [{ capture: blocker, minutes: 60 }],
+      minutesClaimed: 45,
+      referenceNow: now,
+    });
+
+    assertEquals(evaluation.allowed, false);
+    assert(evaluation.net < evaluation.thresholds.base);
+  },
+);
+
+Deno.test(
+  "evaluatePreemptionNetGain keeps generic work from displacing a routine dinner",
+  () => {
+    const now = new Date("2026-04-03T20:00:00Z");
+    const target = makeCapture({
+      id: "generic-work",
+      content: "Do some work tonight",
+      estimated_minutes: 45,
+      importance: 1,
+      urgency: 2,
+      impact: 2,
+      reschedule_penalty: 1,
+      blocking: false,
+      created_at: "2026-04-03T19:00:00Z",
+      constraint_type: "start_time",
+      constraint_time: "2026-04-08T00:00:00Z",
+      original_target_time: "2026-04-08T00:00:00Z",
+      start_target_at: "2026-04-08T00:00:00Z",
+      window_start: "2026-04-07T23:30:00Z",
+      window_end: "2026-04-08T00:30:00Z",
+      start_flexibility: "soft",
+      duration_flexibility: "split_allowed",
+      task_type_hint: "task",
+    });
+    const blocker = makeCapture({
+      id: "dinner",
+      content: "Dinner at 7pm",
+      estimated_minutes: 45,
+      importance: 2,
+      urgency: 3,
+      impact: 3,
+      reschedule_penalty: 2,
+      blocking: false,
+      created_at: "2026-04-03T19:00:00Z",
+      constraint_type: "start_time",
+      constraint_time: "2026-04-08T00:00:00Z",
+      original_target_time: "2026-04-08T00:00:00Z",
+      start_target_at: "2026-04-08T00:00:00Z",
+      window_start: "2026-04-07T23:45:00Z",
+      window_end: "2026-04-08T00:15:00Z",
+      cannot_overlap: true,
+      start_flexibility: "soft",
+      duration_flexibility: "fixed",
+      task_type_hint: "routine.meal",
+    });
+
+    const evaluation = evaluatePreemptionNetGain({
+      target,
+      displacements: [{ capture: blocker, minutes: 45 }],
+      minutesClaimed: 45,
+      referenceNow: now,
+    });
+
+    assertEquals(evaluation.allowed, false);
+    assert(evaluation.net < evaluation.thresholds.base);
   },
 );

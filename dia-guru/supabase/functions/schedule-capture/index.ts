@@ -60,10 +60,17 @@ import {
 
 
 const GOOGLE_CALENDAR_ID = (Deno.env.get("GOOGLE_CALENDAR_ID") ?? "primary").trim() || "primary";
-const ENCODED_GOOGLE_CALENDAR_ID = encodeURIComponent(GOOGLE_CALENDAR_ID);
-const GOOGLE_EVENTS = `https://www.googleapis.com/calendar/v3/calendars/${ENCODED_GOOGLE_CALENDAR_ID}/events`;
-
+const BENCHMARK_GOOGLE_CALENDAR_ID =
+  (Deno.env.get("BENCHMARK_GOOGLE_CALENDAR_ID") ?? "").trim();
+const BENCHMARK_SHARED_SECRET =
+  (Deno.env.get("BENCHMARK_SHARED_SECRET") ?? "").trim();
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
+
+type GoogleCalendarTarget = {
+  calendarId: string;
+  scope: "default" | "benchmark";
+  eventsUrl: string;
+};
 
 type CalendarClientCredentials = {
   accountId: number;
@@ -104,6 +111,8 @@ type AdvisorResult = {
     llmError?: string | null;
   };
 };
+
+type ConflictLockReason = "freeze" | "stability_window" | "missing_capture";
 
 type CaptureSnapshot = {
   status: string | null;
@@ -155,12 +164,49 @@ function logScheduleSummary(event: string, payload: Record<string, unknown>) {
   logSchedulerEvent(event, payload);
 }
 
+function buildGoogleCalendarTarget(
+  calendarId: string,
+  scope: GoogleCalendarTarget["scope"],
+): GoogleCalendarTarget {
+  const normalizedCalendarId = calendarId.trim() || "primary";
+  const encodedCalendarId = encodeURIComponent(normalizedCalendarId);
+  return {
+    calendarId: normalizedCalendarId,
+    scope,
+    eventsUrl: `https://www.googleapis.com/calendar/v3/calendars/${encodedCalendarId}/events`,
+  };
+}
+
+const DEFAULT_GOOGLE_CALENDAR_TARGET = buildGoogleCalendarTarget(
+  GOOGLE_CALENDAR_ID,
+  "default",
+);
+
+function resolveGoogleCalendarTarget(
+  body: Record<string, unknown>,
+): GoogleCalendarTarget {
+  const benchmarkSecret =
+    typeof body.benchmarkSecret === "string" ? body.benchmarkSecret.trim() : "";
+  if (!benchmarkSecret) {
+    return DEFAULT_GOOGLE_CALENDAR_TARGET;
+  }
+
+  if (!BENCHMARK_SHARED_SECRET || !BENCHMARK_GOOGLE_CALENDAR_ID) {
+    throw new ScheduleError("Benchmark calendar is not configured.", 500);
+  }
+  if (benchmarkSecret !== BENCHMARK_SHARED_SECRET) {
+    throw new ScheduleError("Invalid benchmark secret.", 403);
+  }
+
+  return buildGoogleCalendarTarget(BENCHMARK_GOOGLE_CALENDAR_ID, "benchmark");
+}
+
 export async function handler(req: Request) {
   try {
     const auth = req.headers.get("Authorization");
     if (!auth) return json({ error: "Missing Authorization" }, 401);
 
-    const body = await req.json().catch(() => ({}));
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>;
     const now = new Date();
     const captureId = body.captureId as string | undefined;
     const action = (body.action as "schedule" | "reschedule" | "complete") ?? "schedule";
@@ -177,6 +223,7 @@ export async function handler(req: Request) {
     const serviceRole = Deno.env.get("SERVICE_ROLE_KEY")!;
     const clientId = Deno.env.get("GOOGLE_CLIENT_ID")!;
     const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
+    const calendarTarget = resolveGoogleCalendarTarget(body);
 
     const supaFromUser = createClient<Database, "public">(supabaseUrl, anon, {
       global: { headers: { Authorization: auth } },
@@ -199,6 +246,8 @@ export async function handler(req: Request) {
 
     logScheduleSummary("schedule.request", {
       captureId: capture.id,
+      calendarId: calendarTarget.calendarId,
+      calendarScope: calendarTarget.scope,
       content: capture.content,
       estimatedMinutes: capture.estimated_minutes,
       urgency: capture.urgency,
@@ -280,6 +329,7 @@ export async function handler(req: Request) {
       admin,
       clientId,
       clientSecret,
+      calendarTarget,
     });
 
     if (action === "complete") {
@@ -558,6 +608,15 @@ export async function handler(req: Request) {
           }
         }
 
+        const conflictMetadata: {
+          preemptionAttempted: boolean;
+          preemptionBlockedByLock?: boolean;
+          lockReasons?: { captureId?: string; summary?: string; reason: ConflictLockReason }[];
+          preemptionRejectedReason?: "net_gain_threshold";
+        } = {
+          preemptionAttempted: false,
+        };
+
         const respondWithConflictDecision = async () => {
           const suggestion = findNextAvailableSlot(busyIntervals, durationMinutes, offsetMinutes, {
             startFrom: addMinutes(preferredSlot.end, SLOT_INCREMENT_MINUTES),
@@ -576,6 +635,7 @@ export async function handler(req: Request) {
             llmConfig,
             busyIntervals,
             admin,
+            conflictMetadata,
           });
 
           await admin
@@ -622,24 +682,42 @@ export async function handler(req: Request) {
           externalConflicts.length === 0 &&
           diaGuruConflicts.length > 0
         ) {
+          conflictMetadata.preemptionAttempted = true;
           captureMap = await loadConflictCaptures(admin, diaGuruConflicts);
           if (captureMap.size > 0) {
             const movable: ConflictSummary[] = [];
             let hasLocked = false;
+            const lockReasons: { captureId?: string; summary?: string; reason: ConflictLockReason }[] =
+              [];
 
             for (const conflict of diaGuruConflicts) {
               const blocker = conflict.captureId ? captureMap.get(conflict.captureId) : null;
               if (!blocker) {
                 hasLocked = true;
+                lockReasons.push({
+                  captureId: conflict.captureId,
+                  summary: conflict.summary,
+                  reason: "missing_capture",
+                });
                 break;
               }
               const frozen = hasActiveFreeze(blocker, now);
               const stabilityLocked = withinStabilityWindow(blocker, now) && plan.mode !== "deadline";
               if (frozen || stabilityLocked) {
                 hasLocked = true;
+                lockReasons.push({
+                  captureId: blocker.id,
+                  summary: conflict.summary,
+                  reason: frozen ? "freeze" : "stability_window",
+                });
                 break;
               }
               movable.push(conflict);
+            }
+
+            if (lockReasons.length > 0) {
+              conflictMetadata.preemptionBlockedByLock = true;
+              conflictMetadata.lockReasons = lockReasons;
             }
 
             if (!hasLocked && movable.length > 0) {
@@ -701,6 +779,7 @@ export async function handler(req: Request) {
                         },
                       });
                       if (!evaluation.allowed) {
+                        conflictMetadata.preemptionRejectedReason = "net_gain_threshold";
                         logSchedulerEvent("preemption.rejected", {
                           captureId: capture.id,
                           reason: "net_gain_threshold",
@@ -2050,6 +2129,12 @@ async function buildConflictDecision(args: {
   llmConfig: LlmConfig | null;
   busyIntervals: { start: Date; end: Date }[];
   admin: SupabaseClient<Database, "public">;
+  conflictMetadata?: {
+    preemptionAttempted: boolean;
+    preemptionBlockedByLock?: boolean;
+    lockReasons?: { captureId?: string; summary?: string; reason: ConflictLockReason }[];
+    preemptionRejectedReason?: "net_gain_threshold";
+  };
 }): Promise<ConflictDecision> {
   const { capture, preferredSlot } = args;
   const suggestionPayload = args.suggestion
@@ -2126,7 +2211,10 @@ async function buildConflictDecision(args: {
     conflicts: args.conflicts,
     suggestion: suggestionPayload,
     advisor: advisorResult.advisor,
-    metadata: advisorResult.metadata,
+    metadata: {
+      ...advisorResult.metadata,
+      ...(args.conflictMetadata ?? {}),
+    },
   };
 
   const noteParts = [
@@ -2331,8 +2419,13 @@ function validateAdvisorSlot(
   return isSlotFree(slot.start, slot.end, busyIntervals);
 }
 
-async function listCalendarEvents(accessToken: string, timeMin: string, timeMax: string) {
-  const url = new URL(GOOGLE_EVENTS);
+async function listCalendarEvents(
+  accessToken: string,
+  eventsUrl: string,
+  timeMin: string,
+  timeMax: string,
+) {
+  const url = new URL(eventsUrl);
   url.searchParams.set("singleEvents", "true");
   url.searchParams.set("orderBy", "startTime");
   url.searchParams.set("timeMin", timeMin);
@@ -2356,8 +2449,12 @@ async function listCalendarEvents(accessToken: string, timeMin: string, timeMax:
   return rawItems as CalendarEvent[];
 }
 
-async function getCalendarEvent(accessToken: string, eventId: string) {
-  const res = await fetch(`${GOOGLE_EVENTS}/${eventId}`, {
+async function getCalendarEvent(
+  accessToken: string,
+  eventsUrl: string,
+  eventId: string,
+) {
+  const res = await fetch(`${eventsUrl}/${eventId}`, {
     method: "GET",
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -2373,11 +2470,12 @@ async function getCalendarEvent(accessToken: string, eventId: string) {
 
 async function deleteCalendarEvent(
   accessToken: string,
+  eventsUrl: string,
   options: { eventId: string; etag?: string | null },
 ) {
   const headers: Record<string, string> = { Authorization: `Bearer ${accessToken}` };
   if (options.etag) headers["If-Match"] = options.etag;
-  const res = await fetch(`${GOOGLE_EVENTS}/${options.eventId}`, {
+  const res = await fetch(`${eventsUrl}/${options.eventId}`, {
     method: "DELETE",
     headers,
   });
@@ -2418,6 +2516,7 @@ function resolveCaptureSummaryText(capture: CaptureEntryRow): string {
 
 async function createCalendarEvent(
   accessToken: string,
+  eventsUrl: string,
   params: {
     capture: CaptureEntryRow;
     slot: { start: Date; end: Date };
@@ -2453,7 +2552,7 @@ async function createCalendarEvent(
     },
   };
 
-  const res = await fetch(GOOGLE_EVENTS, {
+  const res = await fetch(eventsUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -2654,8 +2753,9 @@ export function createGoogleCalendarActions(options: {
   admin: SupabaseClient<Database, "public">;
   clientId: string;
   clientSecret: string;
+  calendarTarget: GoogleCalendarTarget;
 }): GoogleCalendarActions {
-  const { credentials, admin, clientId, clientSecret } = options;
+  const { credentials, admin, clientId, clientSecret, calendarTarget } = options;
 
   const run = async <T>(operation: (token: string) => Promise<T>): Promise<T> => {
     let refreshed = false;
@@ -2688,10 +2788,14 @@ export function createGoogleCalendarActions(options: {
   };
 
   return {
-    listEvents: (timeMin, timeMax) => run((token) => listCalendarEvents(token, timeMin, timeMax)),
-    deleteEvent: (options) => run((token) => deleteCalendarEvent(token, options)),
-    createEvent: (options) => run((token) => createCalendarEvent(token, options)),
-    getEvent: (eventId) => run((token) => getCalendarEvent(token, eventId)),
+    listEvents: (timeMin, timeMax) =>
+      run((token) => listCalendarEvents(token, calendarTarget.eventsUrl, timeMin, timeMax)),
+    deleteEvent: (options) =>
+      run((token) => deleteCalendarEvent(token, calendarTarget.eventsUrl, options)),
+    createEvent: (options) =>
+      run((token) => createCalendarEvent(token, calendarTarget.eventsUrl, options)),
+    getEvent: (eventId) =>
+      run((token) => getCalendarEvent(token, calendarTarget.eventsUrl, eventId)),
   };
 }
 

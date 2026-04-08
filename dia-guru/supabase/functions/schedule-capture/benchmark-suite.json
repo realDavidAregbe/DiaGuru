@@ -1,0 +1,840 @@
+{
+  "meta": {
+    "name": "schedule-capture-policy-benchmarks",
+    "version": 2,
+    "referenceTimezone": "America/Chicago",
+    "notes": "Named policy scenarios for tuning rebalance, overlap, hard anchors, and fallback behavior.",
+    "requiredSetup": [
+      {
+        "id": "dedicated-empty-benchmark-calendar",
+        "status": "done",
+        "instruction": "Live benchmark runs use the dedicated benchmark calendar configured through BENCHMARK_GOOGLE_CALENDAR_ID and BENCHMARK_SHARED_SECRET."
+      },
+      {
+        "id": "benchmark-clear-hook",
+        "status": "note",
+        "instruction": "BENCHMARK_CLEAR_URL is optional. The runner can now clear benchmark days directly through Google Calendar when the hook is not configured."
+      }
+    ],
+    "verificationGuide": {
+      "criticalLiveScenarios": [
+        {
+          "id": "important-start-vs-flexible-chore",
+          "why": "Regression for the original preemption bug: important exact-time work should be able to displace a weak flexible chore."
+        },
+        {
+          "id": "generic-admin-should-not-displace-exercise",
+          "why": "Guardrail: generic admin work should not displace a stronger workout commitment."
+        }
+      ],
+      "isolatedPolicyTests": [
+        "evaluatePreemptionNetGain allows important exact-time study work to preempt a weak chore",
+        "evaluatePreemptionNetGain keeps generic admin from displacing exercise"
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "id": "important-start-vs-flexible-chore",
+      "tags": [
+        "must-pass",
+        "preemption-regression"
+      ],
+      "description": "An important exact-time study task should be able to reclaim space from a vague low-value flexible task when move cost is modest.",
+      "captures": [
+        {
+          "alias": "chore",
+          "content": "Tidy the kitchen",
+          "estimated_minutes": 30,
+          "task_type_hint": "admin",
+          "constraint_type": "flexible",
+          "duration_flexibility": "fixed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 2,
+          "impact": 2,
+          "reschedule_penalty": 1,
+          "blocking": false
+        },
+        {
+          "alias": "assignment",
+          "content": "Work on assignment at 7pm very important",
+          "estimated_minutes": 60,
+          "task_type_hint": "study",
+          "constraint_type": "start_time",
+          "constraint_time": "2027-05-21T00:00:00Z",
+          "window_start": "2027-05-20T23:30:00Z",
+          "window_end": "2027-05-21T00:30:00Z",
+          "duration_flexibility": "split_allowed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 5,
+          "impact": 4,
+          "reschedule_penalty": 3,
+          "blocking": true
+        }
+      ],
+      "steps": [
+        {
+          "type": "schedule",
+          "capture": "chore",
+          "options": {
+            "preferredStart": "2027-05-20T23:45:00Z",
+            "preferredEnd": "2027-05-21T00:15:00Z",
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled"
+            ]
+          }
+        },
+        {
+          "type": "schedule",
+          "capture": "assignment",
+          "options": {
+            "allowRebalance": true,
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "rebalanced_scheduled"
+            ],
+            "note": "Important explicit-time study work should beat a vague flexible chore."
+          }
+        }
+      ]
+    },
+    {
+      "id": "short-urgent-deadline-vs-long-low-value-block",
+      "description": "A short urgent task with real deadline pressure should be allowed to move a long low-value flexible block.",
+      "captures": [
+        {
+          "alias": "backlog",
+          "content": "Sort old screenshots",
+          "estimated_minutes": 90,
+          "task_type_hint": "admin",
+          "constraint_type": "flexible",
+          "duration_flexibility": "split_allowed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 1,
+          "impact": 1,
+          "reschedule_penalty": 0,
+          "blocking": false
+        },
+        {
+          "alias": "deadline_task",
+          "content": "Send scholarship form before 7:30pm",
+          "estimated_minutes": 20,
+          "task_type_hint": "deadline_work",
+          "constraint_type": "deadline_time",
+          "constraint_time": "2027-05-22T00:30:00Z",
+          "window_start": "2027-05-22T00:00:00Z",
+          "window_end": "2027-05-22T00:30:00Z",
+          "duration_flexibility": "fixed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 5,
+          "impact": 4,
+          "reschedule_penalty": 3,
+          "blocking": true
+        }
+      ],
+      "steps": [
+        {
+          "type": "schedule",
+          "capture": "backlog",
+          "options": {
+            "preferredStart": "2027-05-22T00:00:00Z",
+            "preferredEnd": "2027-05-22T01:30:00Z",
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled"
+            ]
+          }
+        },
+        {
+          "type": "schedule",
+          "capture": "deadline_task",
+          "options": {
+            "allowRebalance": true,
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled",
+              "rebalanced_scheduled"
+            ],
+            "note": "Urgent short work must land before the deadline, whether by direct fit or by moving a weak flexible block."
+          }
+        }
+      ]
+    },
+    {
+      "id": "locked-focus-block-does-not-move",
+      "description": "A manually locked scheduled block should stay put even when a later important request asks for the same time.",
+      "captures": [
+        {
+          "alias": "focus",
+          "content": "Deep work block",
+          "estimated_minutes": 60,
+          "task_type_hint": "deep_work",
+          "constraint_type": "flexible",
+          "duration_flexibility": "fixed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 3,
+          "impact": 4,
+          "reschedule_penalty": 2,
+          "blocking": false
+        },
+        {
+          "alias": "important_task",
+          "content": "Finish proposal at 7pm very important",
+          "estimated_minutes": 60,
+          "task_type_hint": "study",
+          "constraint_type": "start_time",
+          "constraint_time": "2027-05-23T00:00:00Z",
+          "window_start": "2027-05-22T23:30:00Z",
+          "window_end": "2027-05-23T00:30:00Z",
+          "duration_flexibility": "split_allowed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 5,
+          "impact": 4,
+          "reschedule_penalty": 3,
+          "blocking": true
+        }
+      ],
+      "steps": [
+        {
+          "type": "schedule",
+          "capture": "focus",
+          "options": {
+            "preferredStart": "2027-05-23T00:00:00Z",
+            "preferredEnd": "2027-05-23T01:00:00Z",
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled"
+            ]
+          }
+        },
+        {
+          "type": "freeze",
+          "capture": "focus",
+          "hours": 24
+        },
+        {
+          "type": "schedule",
+          "capture": "important_task",
+          "options": {
+            "allowRebalance": true,
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "preferred_conflict"
+            ],
+            "conflictCaptures": [
+              "focus"
+            ],
+            "requiresSuggestion": true,
+            "note": "Locked commitments should resist automatic reflow."
+          }
+        }
+      ]
+    },
+    {
+      "id": "hard-appointment-beats-flexible-admin",
+      "description": "A hard-start appointment should not be displaced by a generic flexible admin task.",
+      "captures": [
+        {
+          "alias": "appointment",
+          "content": "Doctor appointment at 7pm",
+          "estimated_minutes": 45,
+          "task_type_hint": "appointment",
+          "constraint_type": "start_time",
+          "constraint_time": "2027-05-24T00:00:00Z",
+          "window_start": "2027-05-23T23:45:00Z",
+          "window_end": "2027-05-24T00:15:00Z",
+          "duration_flexibility": "fixed",
+          "start_flexibility": "hard",
+          "cannot_overlap": true,
+          "urgency": 5,
+          "impact": 5,
+          "reschedule_penalty": 3,
+          "blocking": true
+        },
+        {
+          "alias": "admin",
+          "content": "Clean inbox tonight",
+          "estimated_minutes": 30,
+          "task_type_hint": "admin",
+          "constraint_type": "flexible",
+          "duration_flexibility": "split_allowed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 2,
+          "impact": 2,
+          "reschedule_penalty": 1,
+          "blocking": false
+        }
+      ],
+      "steps": [
+        {
+          "type": "schedule",
+          "capture": "appointment",
+          "options": {
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled"
+            ]
+          }
+        },
+        {
+          "type": "schedule",
+          "capture": "admin",
+          "options": {
+            "preferredStart": "2027-05-24T00:00:00Z",
+            "preferredEnd": "2027-05-24T00:30:00Z",
+            "allowRebalance": true,
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "preferred_conflict"
+            ],
+            "conflictCaptures": [
+              "appointment"
+            ],
+            "requiresSuggestion": true,
+            "note": "Hard appointments should outrank generic admin work."
+          }
+        }
+      ]
+    },
+    {
+      "id": "parallelizable-tasks-should-overlap",
+      "description": "Two lightweight parallelizable tasks should be able to overlap when the user explicitly allows it.",
+      "captures": [
+        {
+          "alias": "reading",
+          "content": "Read notes",
+          "estimated_minutes": 30,
+          "task_type_hint": "study",
+          "constraint_type": "flexible",
+          "duration_flexibility": "split_allowed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 2,
+          "impact": 2,
+          "reschedule_penalty": 1,
+          "blocking": false
+        },
+        {
+          "alias": "reply",
+          "content": "Reply to recruiter",
+          "estimated_minutes": 30,
+          "task_type_hint": "admin",
+          "constraint_type": "flexible",
+          "duration_flexibility": "split_allowed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 4,
+          "impact": 3,
+          "reschedule_penalty": 1,
+          "blocking": false
+        }
+      ],
+      "steps": [
+        {
+          "type": "schedule",
+          "capture": "reading",
+          "options": {
+            "preferredStart": "2027-05-25T00:00:00Z",
+            "preferredEnd": "2027-05-25T00:15:00Z",
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled"
+            ]
+          }
+        },
+        {
+          "type": "schedule",
+          "capture": "reply",
+          "options": {
+            "preferredStart": "2027-05-25T00:00:00Z",
+            "preferredEnd": "2027-05-25T00:15:00Z",
+            "allowOverlap": true,
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "overlap_scheduled"
+            ],
+            "note": "This scenario is meant to validate the overlap policy path."
+          }
+        }
+      ]
+    },
+    {
+      "id": "cannot-overlap-blocks-parallel-path",
+      "description": "A capture that explicitly cannot overlap should still conflict even when overlap is allowed in the request.",
+      "captures": [
+        {
+          "alias": "therapy",
+          "content": "Therapy session",
+          "estimated_minutes": 50,
+          "task_type_hint": "appointment",
+          "constraint_type": "start_time",
+          "constraint_time": "2027-05-26T00:00:00Z",
+          "window_start": "2027-05-25T23:45:00Z",
+          "window_end": "2027-05-26T00:15:00Z",
+          "duration_flexibility": "fixed",
+          "start_flexibility": "hard",
+          "cannot_overlap": true,
+          "urgency": 5,
+          "impact": 5,
+          "reschedule_penalty": 3,
+          "blocking": true
+        },
+        {
+          "alias": "email",
+          "content": "Answer emails",
+          "estimated_minutes": 30,
+          "task_type_hint": "admin",
+          "constraint_type": "flexible",
+          "duration_flexibility": "split_allowed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 2,
+          "impact": 2,
+          "reschedule_penalty": 1,
+          "blocking": false
+        }
+      ],
+      "steps": [
+        {
+          "type": "schedule",
+          "capture": "therapy",
+          "options": {
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled"
+            ]
+          }
+        },
+        {
+          "type": "schedule",
+          "capture": "email",
+          "options": {
+            "preferredStart": "2027-05-26T00:00:00Z",
+            "preferredEnd": "2027-05-26T00:30:00Z",
+            "allowOverlap": true,
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "preferred_conflict"
+            ],
+            "conflictCaptures": [
+              "therapy"
+            ],
+            "requiresSuggestion": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "two-low-priority-blockers-reflow-for-one-important-slot",
+      "description": "Two weaker scheduled tasks should be movable when one important explicit-time task needs the combined slot.",
+      "captures": [
+        {
+          "alias": "errand_notes",
+          "content": "Sort receipts",
+          "estimated_minutes": 30,
+          "task_type_hint": "admin",
+          "constraint_type": "flexible",
+          "duration_flexibility": "fixed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 1,
+          "impact": 1,
+          "reschedule_penalty": 0,
+          "blocking": false
+        },
+        {
+          "alias": "stretch",
+          "content": "Light stretch",
+          "estimated_minutes": 30,
+          "task_type_hint": "health",
+          "constraint_type": "flexible",
+          "duration_flexibility": "fixed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 1,
+          "impact": 1,
+          "reschedule_penalty": 0,
+          "blocking": false
+        },
+        {
+          "alias": "exam_review",
+          "content": "Exam review at 6:45pm very important",
+          "estimated_minutes": 60,
+          "task_type_hint": "study",
+          "constraint_type": "start_time",
+          "constraint_time": "2027-05-27T23:45:00Z",
+          "window_start": "2027-05-27T23:30:00Z",
+          "window_end": "2027-05-28T00:15:00Z",
+          "duration_flexibility": "split_allowed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 5,
+          "impact": 5,
+          "reschedule_penalty": 3,
+          "blocking": true
+        }
+      ],
+      "steps": [
+        {
+          "type": "schedule",
+          "capture": "errand_notes",
+          "options": {
+            "preferredStart": "2027-05-27T23:30:00Z",
+            "preferredEnd": "2027-05-28T00:00:00Z",
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled"
+            ]
+          }
+        },
+        {
+          "type": "schedule",
+          "capture": "stretch",
+          "options": {
+            "preferredStart": "2027-05-28T00:10:00Z",
+            "preferredEnd": "2027-05-28T00:40:00Z",
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled"
+            ]
+          }
+        },
+        {
+          "type": "schedule",
+          "capture": "exam_review",
+          "options": {
+            "allowRebalance": true,
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "rebalanced_scheduled"
+            ],
+            "note": "The scheduler should be able to reflow multiple weak blockers when a stronger exact-time task needs the slot."
+          }
+        }
+      ]
+    },
+    {
+      "id": "routine-meal-protected-from-generic-work",
+      "description": "Routine meal anchors should not be easily displaced by generic work with weak urgency.",
+      "captures": [
+        {
+          "alias": "dinner",
+          "content": "Dinner at 7pm",
+          "estimated_minutes": 45,
+          "importance": 3,
+          "task_type_hint": "routine.meal",
+          "constraint_type": "start_time",
+          "constraint_time": "2027-05-29T00:00:00Z",
+          "window_start": "2027-05-28T23:45:00Z",
+          "window_end": "2027-05-29T00:15:00Z",
+          "duration_flexibility": "fixed",
+          "start_flexibility": "soft",
+          "cannot_overlap": true,
+          "urgency": 3,
+          "impact": 4,
+          "reschedule_penalty": 3,
+          "blocking": true
+        },
+        {
+          "alias": "generic_work",
+          "content": "Do some work tonight",
+          "estimated_minutes": 45,
+          "importance": 1,
+          "task_type_hint": "task",
+          "constraint_type": "start_time",
+          "constraint_time": "2027-05-29T00:00:00Z",
+          "window_start": "2027-05-28T23:30:00Z",
+          "window_end": "2027-05-29T00:30:00Z",
+          "duration_flexibility": "split_allowed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 1,
+          "impact": 1,
+          "reschedule_penalty": 0,
+          "blocking": false
+        }
+      ],
+      "steps": [
+        {
+          "type": "schedule",
+          "capture": "dinner",
+          "options": {
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled"
+            ]
+          }
+        },
+        {
+          "type": "schedule",
+          "capture": "generic_work",
+          "options": {
+            "allowRebalance": true,
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "preferred_conflict"
+            ],
+            "conflictCaptures": [
+              "dinner"
+            ],
+            "requiresSuggestion": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "soft-start-conflict-returns-suggestion",
+      "description": "A soft-start request should still surface a useful fallback suggestion when the preferred time is blocked.",
+      "captures": [
+        {
+          "alias": "blocker",
+          "content": "Walk the dog",
+          "estimated_minutes": 60,
+          "task_type_hint": "health",
+          "constraint_type": "flexible",
+          "duration_flexibility": "fixed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 2,
+          "impact": 2,
+          "reschedule_penalty": 1,
+          "blocking": false
+        },
+        {
+          "alias": "soft_start",
+          "content": "Read chapter around 7pm",
+          "estimated_minutes": 45,
+          "task_type_hint": "study",
+          "constraint_type": "start_time",
+          "constraint_time": "2027-05-30T00:00:00Z",
+          "window_start": "2027-05-29T23:30:00Z",
+          "window_end": "2027-05-30T00:30:00Z",
+          "duration_flexibility": "split_allowed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 3,
+          "impact": 3,
+          "reschedule_penalty": 1,
+          "blocking": false
+        }
+      ],
+      "steps": [
+        {
+          "type": "schedule",
+          "capture": "blocker",
+          "options": {
+            "preferredStart": "2027-05-30T00:00:00Z",
+            "preferredEnd": "2027-05-30T01:00:00Z",
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled"
+            ]
+          }
+        },
+        {
+          "type": "schedule",
+          "capture": "soft_start",
+          "options": {
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "preferred_conflict"
+            ],
+            "conflictCaptures": [
+              "blocker"
+            ],
+            "requiresSuggestion": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "deadline-task-finds-space-before-sleep",
+      "description": "A real deadline task should schedule before a sleep anchor instead of trying to preempt sleep.",
+      "captures": [
+        {
+          "alias": "sleep",
+          "content": "Sleep at 11pm",
+          "estimated_minutes": 480,
+          "task_type_hint": "routine.sleep",
+          "constraint_type": "start_time",
+          "constraint_time": "2027-05-31T04:00:00Z",
+          "window_start": "2027-05-31T03:30:00Z",
+          "window_end": "2027-05-31T04:30:00Z",
+          "duration_flexibility": "fixed",
+          "start_flexibility": "soft",
+          "cannot_overlap": true,
+          "urgency": 3,
+          "impact": 3,
+          "reschedule_penalty": 2,
+          "blocking": false
+        },
+        {
+          "alias": "deadline_jobs",
+          "content": "Apply to jobs before sleep",
+          "estimated_minutes": 60,
+          "task_type_hint": "task",
+          "constraint_type": "deadline_time",
+          "constraint_time": "2027-05-31T04:00:00Z",
+          "window_start": "2027-05-30T22:00:00Z",
+          "window_end": "2027-05-31T04:00:00Z",
+          "duration_flexibility": "split_allowed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 4,
+          "impact": 4,
+          "reschedule_penalty": 2,
+          "blocking": false
+        }
+      ],
+      "steps": [
+        {
+          "type": "schedule",
+          "capture": "sleep",
+          "options": {
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled"
+            ]
+          }
+        },
+        {
+          "type": "schedule",
+          "capture": "deadline_jobs",
+          "options": {
+            "allowRebalance": true,
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled"
+            ],
+            "note": "The task should find legal space before sleep instead of trying to displace sleep."
+          }
+        }
+      ]
+    },
+    {
+      "id": "generic-admin-should-not-displace-exercise",
+      "tags": [
+        "must-pass",
+        "guardrail"
+      ],
+      "description": "Exercise blocks should stay put when the competing task is generic admin work with no strong time signal.",
+      "captures": [
+        {
+          "alias": "workout",
+          "content": "Workout at 7pm",
+          "estimated_minutes": 60,
+          "task_type_hint": "health",
+          "constraint_type": "start_time",
+          "constraint_time": "2027-06-01T00:00:00Z",
+          "window_start": "2027-05-31T23:45:00Z",
+          "window_end": "2027-06-01T00:15:00Z",
+          "duration_flexibility": "fixed",
+          "start_flexibility": "soft",
+          "cannot_overlap": true,
+          "urgency": 3,
+          "impact": 3,
+          "reschedule_penalty": 2,
+          "blocking": false
+        },
+        {
+          "alias": "admin_task",
+          "content": "Review notes sometime tonight",
+          "estimated_minutes": 45,
+          "task_type_hint": "admin",
+          "constraint_type": "start_time",
+          "constraint_time": "2027-06-01T00:00:00Z",
+          "window_start": "2027-05-31T23:30:00Z",
+          "window_end": "2027-06-01T00:30:00Z",
+          "duration_flexibility": "split_allowed",
+          "start_flexibility": "soft",
+          "cannot_overlap": false,
+          "urgency": 2,
+          "impact": 2,
+          "reschedule_penalty": 1,
+          "blocking": false
+        }
+      ],
+      "steps": [
+        {
+          "type": "schedule",
+          "capture": "workout",
+          "options": {
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "scheduled"
+            ]
+          }
+        },
+        {
+          "type": "schedule",
+          "capture": "admin_task",
+          "options": {
+            "allowRebalance": true,
+            "allowLatePlacement": true
+          },
+          "expect": {
+            "outcomes": [
+              "preferred_conflict"
+            ],
+            "conflictCaptures": [
+              "workout"
+            ],
+            "requiresSuggestion": true
+          }
+        }
+      ]
+    }
+  ]
+}

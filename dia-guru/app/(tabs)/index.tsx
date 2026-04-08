@@ -124,6 +124,25 @@ function formatConflictMessage(decision: ScheduleDecision) {
       lines.push(`- ${label}${suffix}: ${details}`);
     }
   }
+  const lockReasons = decision.metadata?.lockReasons ?? [];
+  if (decision.metadata?.preemptionBlockedByLock && lockReasons.length > 0) {
+    lines.push("", "Why DiaGuru did not make room:");
+    for (const reason of lockReasons) {
+      const label = reason.summary?.trim() || "A conflicting capture";
+      const detail =
+        reason.reason === "freeze"
+          ? "is locked and cannot be moved yet."
+          : reason.reason === "stability_window"
+          ? "is too close to its start time to move safely."
+          : "could not be resolved from the database.";
+      lines.push(`- ${label} ${detail}`);
+    }
+  } else if (decision.metadata?.preemptionRejectedReason === "net_gain_threshold") {
+    lines.push(
+      "",
+      "DiaGuru checked whether moving the conflicting task was worth it and kept the existing schedule.",
+    );
+  }
   if (decision.suggestion) {
     const suggestionStart = new Date(
       decision.suggestion.start,
@@ -1054,6 +1073,7 @@ export default function HomeTab() {
       try {
         setScheduling(true);
         const response = await invokeScheduleCapture(targetId, mode, {
+          allowRebalance: options?.allowRebalance ?? true,
           timezone,
           timezoneOffsetMinutes,
           ...(options ?? {}),
@@ -1161,6 +1181,7 @@ export default function HomeTab() {
       for (const cap of queue) {
         try {
           const resp = await invokeScheduleCapture(cap.id, "schedule", {
+            allowRebalance: true,
             timezone,
             timezoneOffsetMinutes,
           });
@@ -1191,6 +1212,7 @@ export default function HomeTab() {
             const follow = await invokeScheduleCapture(cap.id, "schedule", {
               preferredStart: suggestion.start,
               preferredEnd: suggestion.end,
+              allowRebalance: true,
               timezone,
               timezoneOffsetMinutes,
             });
@@ -1220,6 +1242,7 @@ export default function HomeTab() {
                   preferredStart: suggestion.start,
                   preferredEnd: suggestion.end,
                   allowOverlap: true,
+                  allowRebalance: false,
                   timezone,
                   timezoneOffsetMinutes,
                 },
@@ -1255,6 +1278,7 @@ export default function HomeTab() {
               "schedule",
               {
                 allowOverlap: true,
+                allowRebalance: false,
                 timezone,
                 timezoneOffsetMinutes,
               },
@@ -1474,31 +1498,40 @@ export default function HomeTab() {
 
   const attemptSchedule = useCallback(
     async (captureId: string) => {
-      const response = await scheduleTopCapture(captureId, "schedule");
+      const response = await scheduleTopCapture(captureId, "schedule", {
+        allowRebalance: true,
+      });
       const decision = response?.decision;
       if (decision?.type === "preferred_conflict") {
         const message = formatConflictMessage(decision);
-        Alert.alert("Scheduling conflict", message, [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Overlap anyway",
+        const actions: {
+          text: string;
+          style?: "default" | "cancel" | "destructive";
+          onPress?: () => void;
+        }[] = [{ text: "Cancel", style: "cancel" }];
+
+        if (decision.suggestion?.start && decision.suggestion?.end) {
+          actions.push({
+            text: "Use suggested time",
             onPress: () =>
               scheduleTopCapture(captureId, "schedule", {
-                allowOverlap: true,
-              }),
-          },
-          {
-            text: "Make room",
-            onPress: () =>
-              scheduleTopCapture(captureId, "schedule", {
+                preferredStart: decision.suggestion?.start,
+                preferredEnd: decision.suggestion?.end,
                 allowRebalance: true,
               }),
-          },
-          {
-            text: "Let DiaGuru decide",
-            onPress: () => scheduleTopCapture(captureId, "schedule"),
-          },
-        ]);
+          });
+        }
+
+        actions.push({
+          text: "Overlap anyway",
+          onPress: () =>
+            scheduleTopCapture(captureId, "schedule", {
+              allowOverlap: true,
+              allowRebalance: false,
+            }),
+        });
+
+        Alert.alert("Scheduling conflict", message, actions);
       }
       return response;
     },
