@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { resolveCalendarClient } from "../_shared/calendar-client.ts";
+import { json, maybeHandleCors } from "../_shared/cors.ts";
 import type { CalendarAccountRow, Database } from "../types.ts";
 
 type HealthStatus = "unlinked" | "healthy" | "needs_reconnect";
@@ -51,7 +52,12 @@ export async function getCalendarHealth(args: {
 
   const account = accountRow as CalendarAccountRow;
 
-  const resolved = await resolveCalendarClient(admin, userId, clientId, clientSecret);
+  const resolved = await resolveCalendarClient(
+    admin,
+    userId,
+    clientId,
+    clientSecret,
+  );
 
   const { data: latestAccount, error: latestAccountError } = await admin
     .from("calendar_accounts")
@@ -73,9 +79,15 @@ export async function getCalendarHealth(args: {
     throw new Error(tokenError.message);
   }
 
-  const latest = (latestAccount as { needs_reconnect?: boolean } | null) ?? null;
-  const token = (tokenRow as { expiry?: string | null; refresh_token?: string | null } | null) ?? null;
-  const needsReconnectFlag = latest?.needs_reconnect ?? account.needs_reconnect ?? false;
+  const latest =
+    (latestAccount as { needs_reconnect?: boolean } | null) ?? null;
+  const token =
+    (tokenRow as {
+      expiry?: string | null;
+      refresh_token?: string | null;
+    } | null) ?? null;
+  const needsReconnectFlag =
+    latest?.needs_reconnect ?? account.needs_reconnect ?? false;
   const expiresAt = token?.expiry ?? null;
   const hasRefreshToken = Boolean(token?.refresh_token);
 
@@ -103,6 +115,9 @@ export async function getCalendarHealth(args: {
 }
 
 export async function handler(req: Request) {
+  const corsResponse = maybeHandleCors(req);
+  if (corsResponse) return corsResponse;
+
   try {
     const auth = req.headers.get("Authorization");
     if (!auth) {
@@ -118,7 +133,8 @@ export async function handler(req: Request) {
     const supaFromUser = createClient<Database>(supabaseUrl, anon, {
       global: { headers: { Authorization: auth } },
     });
-    const { data: userData, error: userError } = await supaFromUser.auth.getUser();
+    const { data: userData, error: userError } =
+      await supaFromUser.auth.getUser();
     if (userError || !userData?.user) {
       return json({ error: "Unauthorized" }, 401);
     }
@@ -139,11 +155,4 @@ export async function handler(req: Request) {
 
 if (import.meta.main) {
   Deno.serve(handler);
-}
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
 }

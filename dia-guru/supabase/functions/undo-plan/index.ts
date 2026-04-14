@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { json, maybeHandleCors } from "../_shared/cors.ts";
 import type {
   CaptureEntryRow,
   Database,
@@ -6,10 +7,11 @@ import type {
   PlanRunRow,
 } from "../types.ts";
 import {
-  ScheduleError,
-  resolveCalendarClient,
   createGoogleCalendarActions,
+  DEFAULT_GOOGLE_CALENDAR_TARGET,
   priorityForCapture,
+  resolveCalendarClient,
+  ScheduleError,
 } from "../schedule-capture/index.ts";
 
 type UndoRequest = {
@@ -17,6 +19,9 @@ type UndoRequest = {
 };
 
 export async function handler(req: Request) {
+  const corsResponse = maybeHandleCors(req);
+  if (corsResponse) return corsResponse;
+
   try {
     const auth = req.headers.get("Authorization");
     if (!auth) return json({ error: "Missing Authorization" }, 401);
@@ -34,8 +39,11 @@ export async function handler(req: Request) {
     const supaFromUser = createClient<Database, "public">(supabaseUrl, anon, {
       global: { headers: { Authorization: auth } },
     });
-    const { data: userData, error: userError } = await supaFromUser.auth.getUser();
-    if (userError || !userData?.user) return json({ error: "Unauthorized" }, 401);
+    const { data: userData, error: userError } = await supaFromUser.auth
+      .getUser();
+    if (userError || !userData?.user) {
+      return json({ error: "Unauthorized" }, 401);
+    }
     const userId = userData.user.id;
 
     const admin = createClient<Database, "public">(supabaseUrl, serviceRole);
@@ -76,7 +84,12 @@ export async function handler(req: Request) {
       captureMap.set(row.id, row);
     }
 
-    const credentials = await resolveCalendarClient(admin, userId, clientId, clientSecret);
+    const credentials = await resolveCalendarClient(
+      admin,
+      userId,
+      clientId,
+      clientSecret,
+    );
     if (!credentials) {
       return json({ error: "Google Calendar not linked" }, 400);
     }
@@ -85,6 +98,7 @@ export async function handler(req: Request) {
       admin,
       clientId,
       clientSecret,
+      calendarTarget: DEFAULT_GOOGLE_CALENDAR_TARGET,
     });
 
     const now = new Date();
@@ -102,7 +116,8 @@ export async function handler(req: Request) {
           });
         } catch (error) {
           if (
-            !(error instanceof ScheduleError && (error.status === 404 || error.status === 412))
+            !(error instanceof ScheduleError &&
+              (error.status === 404 || error.status === 412))
           ) {
             console.log("Failed to delete plan event during undo", error);
           }
@@ -110,8 +125,7 @@ export async function handler(req: Request) {
       }
 
       let recreatedEvent: { id: string; etag: string | null } | null = null;
-      const shouldRestoreEvent =
-        action.prev_status === "scheduled" &&
+      const shouldRestoreEvent = action.prev_status === "scheduled" &&
         action.prev_planned_start &&
         action.prev_planned_end;
 
@@ -134,10 +148,9 @@ export async function handler(req: Request) {
         }
       }
 
-      const nextRescheduleCount =
-        action.action_type === "scheduled"
-          ? capture.reschedule_count ?? 0
-          : Math.max(0, (capture.reschedule_count ?? 0) - 1);
+      const nextRescheduleCount = action.action_type === "scheduled"
+        ? capture.reschedule_count ?? 0
+        : Math.max(0, (capture.reschedule_count ?? 0) - 1);
 
       const restoredStatus =
         (action.prev_status === "scheduled" && !recreatedEvent
@@ -147,10 +160,9 @@ export async function handler(req: Request) {
         action.prev_status === "scheduled" && !recreatedEvent
           ? null
           : action.prev_planned_start;
-      const restoredEnd =
-        action.prev_status === "scheduled" && !recreatedEvent
-          ? null
-          : action.prev_planned_end;
+      const restoredEnd = action.prev_status === "scheduled" && !recreatedEvent
+        ? null
+        : action.prev_planned_end;
 
       const updatedValues = {
         status: restoredStatus,
@@ -168,7 +180,10 @@ export async function handler(req: Request) {
         ),
       };
 
-      await admin.from("capture_entries").update(updatedValues).eq("id", action.capture_id);
+      await admin.from("capture_entries").update(updatedValues).eq(
+        "id",
+        action.capture_id,
+      );
       captureMap.set(action.capture_id, {
         ...capture,
         ...updatedValues,
@@ -191,7 +206,10 @@ export async function handler(req: Request) {
     });
   } catch (error) {
     if (error instanceof ScheduleError) {
-      return json({ error: error.message, details: error.details ?? null }, error.status);
+      return json(
+        { error: error.message, details: error.details ?? null },
+        error.status,
+      );
     }
     const message = error instanceof Error ? error.message : String(error);
     return json({ error: "Undo failed", details: message }, 500);
@@ -202,14 +220,10 @@ if (import.meta.main) {
   Deno.serve(handler);
 }
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function mergeSchedulingNotes(existing: string | null | undefined, note: string) {
+function mergeSchedulingNotes(
+  existing: string | null | undefined,
+  note: string,
+) {
   const trimmed = note.trim();
   if (!trimmed) return existing ?? null;
   const timestamp = new Date().toISOString();

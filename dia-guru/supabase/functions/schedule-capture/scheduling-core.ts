@@ -94,8 +94,23 @@ export type ScheduleDecision = {
     llmError?: string | null;
     preemptionAttempted?: boolean;
     preemptionBlockedByLock?: boolean;
-    lockReasons?: { captureId?: string; summary?: string; reason: "freeze" | "stability_window" | "missing_capture" }[];
+    lockReasons?: {
+      captureId?: string;
+      summary?: string;
+      reason: "freeze" | "stability_window" | "missing_capture";
+    }[];
     preemptionRejectedReason?: "net_gain_threshold";
+    suggestionConstraint?: {
+      reason:
+        | "slot_exceeds_deadline"
+        | "slot_outside_window"
+        | "no_legal_later_slot";
+      rejectedSlot?: { start: string; end: string } | null;
+      lateCandidate?: { start: string; end: string } | null;
+      deadline?: string | null;
+      windowStart?: string | null;
+      windowEnd?: string | null;
+    } | null;
   };
 };
 

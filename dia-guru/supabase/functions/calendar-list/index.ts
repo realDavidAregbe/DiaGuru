@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { json, maybeHandleCors } from "../_shared/cors.ts";
 
 type GEvent = {
   id: string;
@@ -6,12 +7,17 @@ type GEvent = {
   htmlLink?: string;
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
-  extendedProperties?: { private?: Record<string, string>; shared?: Record<string, string> };
+  extendedProperties?: {
+    private?: Record<string, string>;
+    shared?: Record<string, string>;
+  };
 };
 
-const GOOGLE_CALENDAR_ID = (Deno.env.get("GOOGLE_CALENDAR_ID") ?? "primary").trim() || "primary";
+const GOOGLE_CALENDAR_ID =
+  (Deno.env.get("GOOGLE_CALENDAR_ID") ?? "primary").trim() || "primary";
 const ENCODED_GOOGLE_CALENDAR_ID = encodeURIComponent(GOOGLE_CALENDAR_ID);
-const GOOGLE_EVENTS = `https://www.googleapis.com/calendar/v3/calendars/${ENCODED_GOOGLE_CALENDAR_ID}/events`;
+const GOOGLE_EVENTS =
+  `https://www.googleapis.com/calendar/v3/calendars/${ENCODED_GOOGLE_CALENDAR_ID}/events`;
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
 
 /**
@@ -22,6 +28,9 @@ const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
  * - We return a small, UI-friendly array.
  */
 Deno.serve(async (req) => {
+  const corsResponse = maybeHandleCors(req);
+  if (corsResponse) return corsResponse;
+
   try {
     // 0) Identify user from Supabase JWT in the Authorization header
     const auth = req.headers.get("Authorization"); // "Bearer <jwt>"
@@ -58,7 +67,9 @@ Deno.serve(async (req) => {
 
     let accessToken = tok.access_token;
     const refreshToken = tok.refresh_token as string | null;
-    const isExpired = tok.expiry ? Date.parse(tok.expiry) <= Date.now() + 30_000 : true; // refresh if within 30s
+    const isExpired = tok.expiry
+      ? Date.parse(tok.expiry) <= Date.now() + 30_000
+      : true; // refresh if within 30s
 
     // 2) Refresh token if needed
     if (isExpired && refreshToken) {
@@ -74,10 +85,16 @@ Deno.serve(async (req) => {
         body,
       });
       const rj = await rr.json();
-      if (!rr.ok) return json({ error: "Failed to refresh Google token", details: rj }, 401);
+      if (!rr.ok) {
+        return json(
+          { error: "Failed to refresh Google token", details: rj },
+          401,
+        );
+      }
 
       accessToken = rj.access_token;
-      const newExpiry = new Date(Date.now() + (rj.expires_in ?? 0) * 1000).toISOString();
+      const newExpiry = new Date(Date.now() + (rj.expires_in ?? 0) * 1000)
+        .toISOString();
       await admin.from("calendar_tokens").upsert({
         account_id: acct.id,
         access_token: accessToken,
@@ -114,7 +131,8 @@ Deno.serve(async (req) => {
         htmlLink: record.htmlLink as string | undefined,
         start: record.start as GEvent["start"],
         end: record.end as GEvent["end"],
-        extendedProperties: record.extendedProperties as GEvent["extendedProperties"],
+        extendedProperties: record
+          .extendedProperties as GEvent["extendedProperties"],
       };
     });
 
@@ -123,13 +141,6 @@ Deno.serve(async (req) => {
     return json({ error: "Server error", details: String(e) }, 500);
   }
 });
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
 
 async function safeJson(req: Request) {
   try {

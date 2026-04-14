@@ -2,6 +2,7 @@ import { assert, assertEquals } from "std/assert";
 
 import type { CaptureEntryRow } from "../types.ts";
 import { mapExtractionToCapture } from "../parse-task/index.ts";
+import { __test__ as scheduleCaptureTestUtils } from "./index.ts";
 import {
   type CalendarEvent,
   collectConflictingEvents,
@@ -659,5 +660,125 @@ Deno.test(
 
     assertEquals(evaluation.allowed, false);
     assert(evaluation.net < evaluation.thresholds.base);
+  },
+);
+
+Deno.test(
+  "buildOverlapBudgetDayKey uses the user's local day instead of UTC day",
+  () => {
+    const utcStart = new Date("2026-04-08T00:30:00Z");
+
+    assertEquals(
+      scheduleCaptureTestUtils.buildOverlapBudgetDayKey(utcStart, -300),
+      "2026-04-07",
+    );
+    assertEquals(
+      scheduleCaptureTestUtils.buildOverlapBudgetDayKey(utcStart, 0),
+      "2026-04-08",
+    );
+  },
+);
+
+Deno.test(
+  "resolveSuggestedSlotWithinConstraints returns the next legal slot before the window closes",
+  () => {
+    const result =
+      scheduleCaptureTestUtils.resolveSuggestedSlotWithinConstraints({
+        busyIntervals: [
+          {
+            start: new Date("2026-04-09T15:00:00Z"),
+            end: new Date("2026-04-09T16:00:00Z"),
+          },
+        ],
+        durationMinutes: 60,
+        offsetMinutes: 0,
+        referenceNow: new Date("2026-04-09T14:30:00Z"),
+        searchStart: new Date("2026-04-09T15:05:00Z"),
+        windowStart: new Date("2026-04-09T14:30:00Z"),
+        windowEnd: new Date("2026-04-09T18:00:00Z"),
+        enforceWorkingWindow: true,
+        resolvedDeadline: new Date("2026-04-09T18:00:00Z"),
+      });
+
+    assert(result.suggestion);
+    assertEquals(
+      result.suggestion.start.toISOString(),
+      "2026-04-09T16:00:00.000Z",
+    );
+    assertEquals(
+      result.suggestion.end.toISOString(),
+      "2026-04-09T17:00:00.000Z",
+    );
+    assertEquals(result.constraint, null);
+  },
+);
+
+Deno.test(
+  "resolveSuggestedSlotWithinConstraints explains when the next free slot misses the deadline",
+  () => {
+    const result =
+      scheduleCaptureTestUtils.resolveSuggestedSlotWithinConstraints({
+        busyIntervals: [
+          {
+            start: new Date("2026-04-09T15:00:00Z"),
+            end: new Date("2026-04-09T18:00:00Z"),
+          },
+        ],
+        durationMinutes: 60,
+        offsetMinutes: 0,
+        referenceNow: new Date("2026-04-09T14:30:00Z"),
+        searchStart: new Date("2026-04-09T15:05:00Z"),
+        windowStart: new Date("2026-04-09T14:30:00Z"),
+        windowEnd: new Date("2026-04-09T17:00:00Z"),
+        enforceWorkingWindow: true,
+        resolvedDeadline: new Date("2026-04-09T17:00:00Z"),
+      });
+
+    assertEquals(result.suggestion, null);
+    assert(result.constraint);
+    assertEquals(result.constraint.reason, "slot_exceeds_deadline");
+    assertEquals(result.constraint.rejectedSlot, {
+      start: "2026-04-09T18:05:00.000Z",
+      end: "2026-04-09T19:05:00.000Z",
+    });
+    assertEquals(result.constraint.lateCandidate, {
+      start: "2026-04-09T18:00:00.000Z",
+      end: "2026-04-09T19:00:00.000Z",
+    });
+  },
+);
+
+Deno.test(
+  "buildScheduleExplanation explains user-approved overlap with external events",
+  () => {
+    const explanation = scheduleCaptureTestUtils.buildScheduleExplanation({
+      plan: {
+        mode: "start",
+        preferredSlot: makeSlot("2026-04-09T15:00:00Z", "2026-04-09T16:00:00Z"),
+        deadline: null,
+        window: null,
+      },
+      slot: makeSlot("2026-04-09T15:00:00Z", "2026-04-09T16:00:00Z"),
+      capturePriority: 12,
+      durationMinutes: 60,
+      enforceWorkingWindow: true,
+      resolvedDeadline: null,
+      preferredSlot: makeSlot("2026-04-09T15:00:00Z", "2026-04-09T16:00:00Z"),
+      decisionPath: ["preferred_slot", "external_overlap"],
+      flags: {
+        overlapped: true,
+        externalOverlap: true,
+        usedPreferred: true,
+      },
+    });
+
+    assert(
+      explanation.reasons.includes(
+        "Overlap allowed; scheduled alongside another calendar event you chose not to move.",
+      ),
+    );
+    assert(
+      !explanation.reasons.includes("Avoids existing calendar conflicts."),
+    );
   },
 );

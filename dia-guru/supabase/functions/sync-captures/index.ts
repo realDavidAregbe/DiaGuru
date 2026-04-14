@@ -1,13 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { json, maybeHandleCors } from "../_shared/cors.ts";
 import type { CalendarTokenRow, CaptureEntryRow, Database } from "../types.ts";
 
-const GOOGLE_CALENDAR_ID = (Deno.env.get("GOOGLE_CALENDAR_ID") ?? "primary").trim() || "primary";
+const GOOGLE_CALENDAR_ID =
+  (Deno.env.get("GOOGLE_CALENDAR_ID") ?? "primary").trim() || "primary";
 const ENCODED_GOOGLE_CALENDAR_ID = encodeURIComponent(GOOGLE_CALENDAR_ID);
-const GOOGLE_EVENTS = `https://www.googleapis.com/calendar/v3/calendars/${ENCODED_GOOGLE_CALENDAR_ID}/events`;
+const GOOGLE_EVENTS =
+  `https://www.googleapis.com/calendar/v3/calendars/${ENCODED_GOOGLE_CALENDAR_ID}/events`;
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
-const MANUAL_FREEZE_DURATION_MS = 24 * 60 * 60 * 1000;
-
 type CalendarEvent = {
   id: string;
   etag?: string;
@@ -28,7 +29,27 @@ class SyncError extends Error {
   }
 }
 
+type SyncStateArgs = {
+  capture: Pick<
+    CaptureEntryRow,
+    | "status"
+    | "planned_start"
+    | "planned_end"
+    | "calendar_event_id"
+    | "calendar_event_etag"
+    | "manual_touch_at"
+    | "freeze_until"
+  >;
+  plannedStart: string;
+  plannedEnd: string;
+  eventId: string;
+  eventEtag: string | null;
+};
+
 export async function handler(req: Request) {
+  const corsResponse = maybeHandleCors(req);
+  if (corsResponse) return corsResponse;
+
   try {
     const auth = req.headers.get("Authorization");
     if (!auth) throw new SyncError("Missing Authorization header", 401);
@@ -42,8 +63,11 @@ export async function handler(req: Request) {
     const supaFromUser = createClient<Database, "public">(supabaseUrl, anon, {
       global: { headers: { Authorization: auth } },
     });
-    const { data: userData, error: userError } = await supaFromUser.auth.getUser();
-    if (userError || !userData?.user) throw new SyncError("Unauthorized", 401, userError);
+    const { data: userData, error: userError } = await supaFromUser.auth
+      .getUser();
+    if (userError || !userData?.user) {
+      throw new SyncError("Unauthorized", 401, userError);
+    }
 
     const userId = userData.user.id;
     const admin = createClient<Database, "public">(supabaseUrl, serviceRole);
@@ -54,7 +78,9 @@ export async function handler(req: Request) {
       .eq("user_id", userId)
       .eq("provider", "google")
       .single();
-    if (accountError || !account) throw new SyncError("Google Calendar not linked", 400, accountError);
+    if (accountError || !account) {
+      throw new SyncError("Google Calendar not linked", 400, accountError);
+    }
     const accountId = (account as { id: number }).id;
 
     const { accessToken, refreshed } = await resolveAccessToken(
@@ -79,10 +105,12 @@ export async function handler(req: Request) {
     const captureIds = Array.from(captureIdSet);
     const { data: captureRows } = captureIds.length
       ? await admin
-          .from("capture_entries")
-          .select("id, user_id, status, planned_start, planned_end, calendar_event_id, calendar_event_etag, freeze_until, manual_touch_at, scheduling_notes")
-          .eq("user_id", userId)
-          .in("id", captureIds)
+        .from("capture_entries")
+        .select(
+          "id, user_id, status, planned_start, planned_end, calendar_event_id, calendar_event_etag, freeze_until, manual_touch_at, scheduling_notes",
+        )
+        .eq("user_id", userId)
+        .in("id", captureIds)
       : { data: [] as CaptureEntryRow[] };
 
     const capturesById = new Map<string, CaptureEntryRow>();
@@ -92,7 +120,9 @@ export async function handler(req: Request) {
 
     const { data: scheduledRows } = await admin
       .from("capture_entries")
-      .select("id, user_id, status, planned_start, planned_end, calendar_event_id, calendar_event_etag, freeze_until, manual_touch_at, scheduling_notes")
+      .select(
+        "id, user_id, status, planned_start, planned_end, calendar_event_id, calendar_event_etag, freeze_until, manual_touch_at, scheduling_notes",
+      )
       .eq("user_id", userId)
       .eq("status", "scheduled");
 
@@ -126,19 +156,22 @@ export async function handler(req: Request) {
       const plannedEnd = end.toISOString();
       if (!capture) continue;
       const eventEtag = typeof event.etag === "string" ? event.etag : null;
-      const startChanged = capture.planned_start !== plannedStart;
-      const endChanged = capture.planned_end !== plannedEnd;
-      const eventIdChanged = capture.calendar_event_id !== event.id;
-      const etagChanged =
-        Boolean(eventEtag) &&
-        Boolean(capture.calendar_event_etag) &&
-        capture.calendar_event_etag !== eventEtag;
+      const syncState = evaluateCaptureSyncState({
+        capture,
+        plannedStart,
+        plannedEnd,
+        eventId: event.id,
+        eventEtag,
+      });
 
-      if (startChanged || endChanged || eventIdChanged || etagChanged || capture.status !== "scheduled") {
-        const manualChangeDetected = etagChanged || startChanged || endChanged;
-        const manualTouchAt = manualChangeDetected ? new Date().toISOString() : capture.manual_touch_at ?? null;
-        const freezeUntil = manualChangeDetected
-          ? new Date(Date.now() + MANUAL_FREEZE_DURATION_MS).toISOString()
+      if (
+        syncState.requiresUpdate
+      ) {
+        const manualTouchAt = syncState.manualChangeDetected
+          ? new Date().toISOString()
+          : capture.manual_touch_at ?? null;
+        const freezeUntil = syncState.staleSyncFreeze
+          ? null
           : capture.freeze_until ?? null;
 
         scheduledUpdates.push({
@@ -149,7 +182,10 @@ export async function handler(req: Request) {
           calendar_event_etag: eventEtag ?? null,
           manual_touch_at: manualTouchAt,
           freeze_until: freezeUntil,
-          scheduling_notes: mergeSchedulingNotes(capture.scheduling_notes, "Synced from Google Calendar."),
+          scheduling_notes: mergeSchedulingNotes(
+            capture.scheduling_notes,
+            "Synced from Google Calendar.",
+          ),
         });
       }
     }
@@ -203,7 +239,9 @@ export async function handler(req: Request) {
         })
         .eq("id", reset.id)
         .eq("user_id", userId);
-      if (error) throw new SyncError("Failed to reset missing capture", 500, error);
+      if (error) {
+        throw new SyncError("Failed to reset missing capture", 500, error);
+      }
       updateCount++;
     }
 
@@ -217,7 +255,10 @@ export async function handler(req: Request) {
     });
   } catch (error) {
     if (error instanceof SyncError) {
-      return json({ error: error.message, details: error.details ?? null }, error.status);
+      return json(
+        { error: error.message, details: error.details ?? null },
+        error.status,
+      );
     }
     const message = error instanceof Error ? error.message : String(error);
     return json({ error: "Server error", details: message }, 500);
@@ -239,7 +280,9 @@ async function resolveAccessToken(
     .select("access_token, refresh_token, expiry")
     .eq("account_id", accountId)
     .single();
-  if (tokenError || !tokenRow) throw new SyncError("Missing Google token", 400, tokenError);
+  if (tokenError || !tokenRow) {
+    throw new SyncError("Missing Google token", 400, tokenError);
+  }
 
   const typedTokenRow = tokenRow as CalendarTokenRow;
 
@@ -263,19 +306,27 @@ async function resolveAccessToken(
       body,
     });
     const payload = await safeParse(res);
-    if (!res.ok) throw new SyncError("Failed to refresh Google token", res.status, payload);
+    if (!res.ok) {
+      throw new SyncError(
+        "Failed to refresh Google token",
+        res.status,
+        payload,
+      );
+    }
 
     const tokenData = (payload ?? {}) as Record<string, unknown>;
     accessToken = String(tokenData.access_token ?? accessToken);
     const expiresInValue = tokenData.expires_in;
-    const expiresIn =
-      typeof expiresInValue === "number" ? expiresInValue : Number(expiresInValue ?? 0);
+    const expiresIn = typeof expiresInValue === "number"
+      ? expiresInValue
+      : Number(expiresInValue ?? 0);
     const newExpiry = new Date(Date.now() + expiresIn * 1000).toISOString();
     await admin.from("calendar_tokens").upsert({
       account_id: accountId,
       access_token: accessToken,
-      refresh_token:
-        typeof tokenData.refresh_token === "string" ? tokenData.refresh_token : refreshToken,
+      refresh_token: typeof tokenData.refresh_token === "string"
+        ? tokenData.refresh_token
+        : refreshToken,
       expiry: newExpiry,
     });
     refreshed = true;
@@ -284,7 +335,11 @@ async function resolveAccessToken(
   return { accessToken, refreshed };
 }
 
-async function fetchDiaGuruEvents(accessToken: string, timeMin: string, timeMax: string) {
+async function fetchDiaGuruEvents(
+  accessToken: string,
+  timeMin: string,
+  timeMax: string,
+) {
   const url = new URL(GOOGLE_EVENTS);
   url.searchParams.set("singleEvents", "true");
   url.searchParams.set("orderBy", "startTime");
@@ -298,22 +353,22 @@ async function fetchDiaGuruEvents(accessToken: string, timeMin: string, timeMax:
   const payload = await safeParse(res);
   if (!res.ok) {
     throw new SyncError(
-      extractGoogleError(payload) ?? `Google events fetch failed (status ${res.status})`,
+      extractGoogleError(payload) ??
+        `Google events fetch failed (status ${res.status})`,
       res.status,
       payload,
     );
   }
 
-  const itemsValue =
-    payload && typeof payload === "object"
-      ? (payload as Record<string, unknown>).items
-      : null;
+  const itemsValue = payload && typeof payload === "object"
+    ? (payload as Record<string, unknown>).items
+    : null;
   const rawItems = Array.isArray(itemsValue) ? (itemsValue as unknown[]) : [];
   return (rawItems as CalendarEvent[]).filter((event) => {
     const captureId = event.extendedProperties?.private?.capture_id;
-    const tagged =
-      event.extendedProperties?.private?.diaGuru === "true" ||
-      (typeof event.summary === "string" && event.summary.trim().startsWith("[DG]"));
+    const tagged = event.extendedProperties?.private?.diaGuru === "true" ||
+      (typeof event.summary === "string" &&
+        event.summary.trim().startsWith("[DG]"));
     return Boolean(captureId) || tagged;
   });
 }
@@ -323,6 +378,51 @@ function parseEventDate(value?: { dateTime?: string; date?: string } | null) {
   if (value.dateTime) return new Date(value.dateTime);
   if (value.date) return new Date(`${value.date}T00:00:00Z`);
   return null;
+}
+
+function sameInstant(
+  a: string | null | undefined,
+  b: string | null | undefined,
+) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  const aTs = Date.parse(a);
+  const bTs = Date.parse(b);
+  if (!Number.isFinite(aTs) || !Number.isFinite(bTs)) {
+    return a === b;
+  }
+  return aTs === bTs;
+}
+
+function evaluateCaptureSyncState(args: SyncStateArgs) {
+  const startChanged = !sameInstant(
+    args.capture.planned_start,
+    args.plannedStart,
+  );
+  const endChanged = !sameInstant(
+    args.capture.planned_end,
+    args.plannedEnd,
+  );
+  const eventIdChanged = args.capture.calendar_event_id !== args.eventId;
+  const etagChanged = Boolean(args.eventEtag) &&
+    args.capture.calendar_event_etag !== args.eventEtag;
+  const staleSyncFreeze = Boolean(args.capture.manual_touch_at) &&
+    Boolean(args.capture.freeze_until) &&
+    !startChanged &&
+    !endChanged;
+  const requiresUpdate = startChanged || endChanged || eventIdChanged ||
+    etagChanged || args.capture.status !== "scheduled" || staleSyncFreeze;
+
+  return {
+    startChanged,
+    endChanged,
+    eventIdChanged,
+    etagChanged,
+    staleSyncFreeze,
+    requiresUpdate,
+    // Only treat real time movement as a manual change signal.
+    manualChangeDetected: startChanged || endChanged,
+  };
 }
 
 async function safeParse(res: Response) {
@@ -344,23 +444,34 @@ function extractGoogleError(payload: unknown) {
   if (typeof top.error === "string" && top.error.trim()) return top.error;
   if (top.error && typeof top.error === "object") {
     const nested = top.error as Record<string, unknown>;
-    if (typeof nested.message === "string" && nested.message.trim()) return nested.message;
+    if (typeof nested.message === "string" && nested.message.trim()) {
+      return nested.message;
+    }
     if (Array.isArray(nested.errors) && nested.errors.length > 0) {
       const first = nested.errors[0] as Record<string, unknown>;
-      if (typeof first.message === "string" && first.message.trim()) return first.message;
-      if (typeof first.reason === "string" && first.reason.trim()) return first.reason;
+      if (typeof first.message === "string" && first.message.trim()) {
+        return first.message;
+      }
+      if (typeof first.reason === "string" && first.reason.trim()) {
+        return first.reason;
+      }
     }
   }
   if (typeof top.message === "string" && top.message.trim()) return top.message;
   if (Array.isArray(top.errors) && top.errors.length > 0) {
     const first = top.errors[0] as Record<string, unknown>;
-    if (typeof first.message === "string" && first.message.trim()) return first.message;
+    if (typeof first.message === "string" && first.message.trim()) {
+      return first.message;
+    }
   }
 
   return null;
 }
 
-function mergeSchedulingNotes(existing: string | null | undefined, note: string) {
+function mergeSchedulingNotes(
+  existing: string | null | undefined,
+  note: string,
+) {
   const trimmed = note.trim();
   if (!trimmed) return existing ?? null;
   const timestamp = new Date().toISOString();
@@ -386,11 +497,9 @@ function mergeSchedulingNotes(existing: string | null | undefined, note: string)
   });
 }
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-export { extractGoogleError, parseEventDate };
+export {
+  evaluateCaptureSyncState,
+  extractGoogleError,
+  parseEventDate,
+  sameInstant,
+};

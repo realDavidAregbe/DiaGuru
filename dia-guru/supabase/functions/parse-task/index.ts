@@ -1,3 +1,5 @@
+import { json, maybeHandleCors } from "../_shared/cors.ts";
+
 type ParseMode = "conversational_strict";
 
 type ParseRequest = {
@@ -174,6 +176,9 @@ type CaptureMapping = {
 const DEFAULT_TIMEZONE = "UTC";
 
 export async function handler(req: Request) {
+  const corsResponse = maybeHandleCors(req);
+  if (corsResponse) return corsResponse;
+
   try {
     const body = (await safeParseBody(req)) as ParseRequest;
     const mode: ParseMode = "conversational_strict";
@@ -856,13 +861,6 @@ function describeError(prefix: string, error: unknown) {
     return `${prefix}: ${error.message}`;
   }
   return `${prefix}: ${String(error)}`;
-}
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
 }
 
 // ----- Extraction helpers (schema + prompts) -----
