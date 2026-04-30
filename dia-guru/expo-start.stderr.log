@@ -1,0 +1,18 @@
+2026-04-08T17:21:05.342Z expo:telemetry Switching strategy from detached to instant
+2026-04-08T17:21:05.676Z expo:telemetry Recording 1 event(s)
+2026-04-08T17:21:05.690Z expo:env Loaded environment variables from: C:\Users\aregb\Documents\Project\DiaGuru\dia-guru\.env
+2026-04-08T17:21:05.692Z expo:env C:\Users\aregb\Documents\Project\DiaGuru\dia-guru\.env.development does not exist, skipping this env file
+2026-04-08T17:21:05.694Z expo:env C:\Users\aregb\Documents\Project\DiaGuru\dia-guru\.env.local does not exist, skipping this env file
+2026-04-08T17:21:05.695Z expo:env C:\Users\aregb\Documents\Project\DiaGuru\dia-guru\.env.development.local does not exist, skipping this env file
+2026-04-08T17:21:05.701Z expo:env "DEEPSEEK_API_KEY" is already defined and IS NOT overwritten
+2026-04-08T17:21:06.380Z expo:prebuild-config:expo-splash-screen:ios config: {
+  image: './assets/images/splash-icon.png',
+  imageWidth: 200,
+  resizeMode: 'contain',
+  backgroundColor: '#ffffff',
+  dark: { backgroundColor: '#000000' }
+}
+2026-04-08T17:21:06.468Z expo:utils:getRunningProcess No pid found for port: 8081. Error: Error: spawnSync lsof ENOENT
+Input is required, but 'npx expo' is in non-interactive mode.
+Required input:
+> Use port 8083 instead?

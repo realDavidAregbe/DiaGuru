@@ -1,7 +1,11 @@
-import { computePriorityScore } from './priority';
-import { supabase } from './supabase';
+import { computePriorityScore } from "./priority";
+import { supabase } from "./supabase";
 
-export type CaptureStatus = 'pending' | 'scheduled' | 'awaiting_confirmation' | 'completed';
+export type CaptureStatus =
+  | "pending"
+  | "scheduled"
+  | "awaiting_confirmation"
+  | "completed";
 
 export type Capture = {
   id: string;
@@ -53,11 +57,11 @@ export type Capture = {
 };
 
 export type ConstraintType =
-  | 'flexible'
-  | 'deadline_time'
-  | 'deadline_date'
-  | 'start_time'
-  | 'window';
+  | "flexible"
+  | "deadline_time"
+  | "deadline_date"
+  | "start_time"
+  | "window";
 
 export type CaptureInput = {
   content: string;
@@ -68,13 +72,13 @@ export type CaptureInput = {
   reschedulePenalty?: number | null;
   blocking?: boolean | null;
   cannotOverlap?: boolean | null;
-  startFlexibility?: 'hard' | 'soft' | 'anytime' | null;
-  durationFlexibility?: 'fixed' | 'split_allowed' | null;
+  startFlexibility?: "hard" | "soft" | "anytime" | null;
+  durationFlexibility?: "fixed" | "split_allowed" | null;
   minChunkMinutes?: number | null;
   maxSplits?: number | null;
   extractionKind?: string | null;
-  timePrefTimeOfDay?: 'morning' | 'afternoon' | 'evening' | 'night' | null;
-  timePrefDay?: 'today' | 'tomorrow' | 'specific_date' | 'any' | null;
+  timePrefTimeOfDay?: "morning" | "afternoon" | "evening" | "night" | null;
+  timePrefDay?: "today" | "tomorrow" | "specific_date" | "any" | null;
   importanceRationale?: string | null;
   schedulingNotes?: string | null;
   extractionJson?: Record<string, unknown> | null;
@@ -94,29 +98,31 @@ export type CaptureInput = {
 
 function normalizeConstraintType(value: unknown): ConstraintType {
   if (
-    value === 'deadline_time' ||
-    value === 'deadline_date' ||
-    value === 'start_time' ||
-    value === 'window'
+    value === "deadline_time" ||
+    value === "deadline_date" ||
+    value === "start_time" ||
+    value === "window"
   ) {
     return value;
   }
-  return 'flexible';
+  return "flexible";
 }
 
 function asNumber(value: unknown, fallback = 0) {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : fallback;
+  }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function asBoolean(value: unknown, fallback = false) {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') {
-    if (['true', 't', '1', 'yes'].includes(value.toLowerCase())) return true;
-    if (['false', 'f', '0', 'no'].includes(value.toLowerCase())) return false;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    if (["true", "t", "1", "yes"].includes(value.toLowerCase())) return true;
+    if (["false", "f", "0", "no"].includes(value.toLowerCase())) return false;
   }
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     if (value === 1) return true;
     if (value === 0) return false;
   }
@@ -125,11 +131,11 @@ function asBoolean(value: unknown, fallback = false) {
 
 function asJsonRecord(value: unknown): Record<string, unknown> | null {
   if (!value) return null;
-  if (typeof value === 'object') return value as Record<string, unknown>;
-  if (typeof value === 'string') {
+  if (typeof value === "object") return value as Record<string, unknown>;
+  if (typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
-      if (parsed && typeof parsed === 'object') {
+      if (parsed && typeof parsed === "object") {
         return parsed as Record<string, unknown>;
       }
     } catch {
@@ -215,21 +221,39 @@ function mapCaptureRow(row: Record<string, any>): Capture {
   return capture;
 }
 
-export type ParseMode = 'conversational_strict';
+export type ParseMode = "conversational_strict";
 
 // Rich extraction types mirrored from parse-task
 export type TaskExtraction = {
   title: string | null;
   estimated_minutes: number | null;
-  deadline: { datetime: string | null; kind: 'hard' | 'soft' | null; source: 'explicit' | 'inferred' | null } | null;
-  scheduled_time: { datetime: string | null; precision: 'exact' | 'approximate' | null; source: 'explicit' | 'inferred' | null } | null;
+  deadline: {
+    datetime: string | null;
+    kind: "hard" | "soft" | null;
+    source: "explicit" | "inferred" | null;
+  } | null;
+  scheduled_time: {
+    datetime: string | null;
+    precision: "exact" | "approximate" | null;
+    source: "explicit" | "inferred" | null;
+  } | null;
   execution_window: {
-    relation: 'before_deadline' | 'after_deadline' | 'around_scheduled' | 'between' | 'on_day' | 'anytime' | null;
+    relation:
+      | "before_deadline"
+      | "after_deadline"
+      | "around_scheduled"
+      | "between"
+      | "on_day"
+      | "anytime"
+      | null;
     start: string | null;
     end: string | null;
-    source: 'explicit' | 'inferred' | 'default' | null;
+    source: "explicit" | "inferred" | "default" | null;
   } | null;
-  time_preferences: { time_of_day: 'morning' | 'afternoon' | 'evening' | 'night' | null; day: 'today' | 'tomorrow' | 'specific_date' | 'any' | null } | null;
+  time_preferences: {
+    time_of_day: "morning" | "afternoon" | "evening" | "night" | null;
+    day: "today" | "tomorrow" | "specific_date" | "any" | null;
+  } | null;
   importance?: {
     urgency: 1 | 2 | 3 | 4 | 5;
     impact: 1 | 2 | 3 | 4 | 5;
@@ -239,12 +263,20 @@ export type TaskExtraction = {
   } | null;
   flexibility?: {
     cannot_overlap: boolean;
-    start_flexibility: 'hard' | 'soft' | 'anytime';
-    duration_flexibility: 'fixed' | 'split_allowed';
+    start_flexibility: "hard" | "soft" | "anytime";
+    duration_flexibility: "fixed" | "split_allowed";
     min_chunk_minutes: number | null;
     max_splits: number | null;
   } | null;
-  kind?: 'task' | 'appointment' | 'call' | 'meeting' | 'study' | 'errand' | 'other' | null;
+  kind?:
+    | "task"
+    | "appointment"
+    | "call"
+    | "meeting"
+    | "study"
+    | "errand"
+    | "other"
+    | null;
   missing: string[];
   clarifying_question: string | null;
   notes: string[];
@@ -252,7 +284,12 @@ export type TaskExtraction = {
 
 export type CaptureMapping = {
   estimated_minutes: number | null;
-  constraint_type: 'flexible' | 'deadline_time' | 'deadline_date' | 'start_time' | 'window';
+  constraint_type:
+    | "flexible"
+    | "deadline_time"
+    | "deadline_date"
+    | "start_time"
+    | "window";
   constraint_time: string | null;
   constraint_end: string | null;
   constraint_date: string | null;
@@ -263,13 +300,35 @@ export type CaptureMapping = {
   start_target_at: string | null;
   is_soft_start: boolean;
   task_type_hint: string | null;
-  scheduled_source?: 'explicit' | 'inferred' | null;
-  scheduled_precision?: 'exact' | 'approximate' | null;
-  execution_window_relation?: 'before_deadline' | 'after_deadline' | 'around_scheduled' | 'between' | 'on_day' | 'anytime' | null;
-  execution_window_source?: 'explicit' | 'inferred' | 'default' | null;
-  time_preferences?: { time_of_day?: 'morning' | 'afternoon' | 'evening' | 'night' | null; day?: 'today' | 'tomorrow' | 'specific_date' | 'any' | null } | null;
-  importance?: { urgency?: number; impact?: number; reschedule_penalty?: number; blocking?: boolean; rationale?: string } | null;
-  flexibility?: { cannot_overlap?: boolean; start_flexibility?: string; duration_flexibility?: string; min_chunk_minutes?: number | null; max_splits?: number | null } | null;
+  scheduled_source?: "explicit" | "inferred" | null;
+  scheduled_precision?: "exact" | "approximate" | null;
+  execution_window_relation?:
+    | "before_deadline"
+    | "after_deadline"
+    | "around_scheduled"
+    | "between"
+    | "on_day"
+    | "anytime"
+    | null;
+  execution_window_source?: "explicit" | "inferred" | "default" | null;
+  time_preferences?: {
+    time_of_day?: "morning" | "afternoon" | "evening" | "night" | null;
+    day?: "today" | "tomorrow" | "specific_date" | "any" | null;
+  } | null;
+  importance?: {
+    urgency?: number;
+    impact?: number;
+    reschedule_penalty?: number;
+    blocking?: boolean;
+    rationale?: string;
+  } | null;
+  flexibility?: {
+    cannot_overlap?: boolean;
+    start_flexibility?: string;
+    duration_flexibility?: string;
+    min_chunk_minutes?: number | null;
+    max_splits?: number | null;
+  } | null;
   missing?: string[] | null;
   clarifying_question?: string | null;
   notes?: string[] | null;
@@ -289,7 +348,7 @@ export type ParseTaskResponse = {
   needed: string[];
   mode: ParseMode;
   follow_up?: {
-    type: 'clarify';
+    type: "clarify";
     prompt: string;
     missing: string[];
   } | null;
@@ -317,11 +376,13 @@ export type ParseCaptureArgs = {
   now?: string;
 };
 
-export async function parseCapture(input: ParseCaptureArgs): Promise<ParseTaskResponse> {
-  const { data, error } = await supabase.functions.invoke('parse-task', {
+export async function parseCapture(
+  input: ParseCaptureArgs,
+): Promise<ParseTaskResponse> {
+  const { data, error } = await supabase.functions.invoke("parse-task", {
     body: {
       text: input.text,
-      mode: input.mode ?? 'conversational_strict',
+      mode: input.mode ?? "conversational_strict",
       timezone: input.timezone,
       now: input.now,
     },
@@ -330,107 +391,123 @@ export async function parseCapture(input: ParseCaptureArgs): Promise<ParseTaskRe
   if (error) {
     // Surface server-provided details from Edge Function (error.context)
     let message: string | null = null;
-    if (typeof error === 'object' && error !== null) {
+    if (typeof error === "object" && error !== null) {
       const anyErr = error as any;
-      if (typeof anyErr.message === 'string') message = anyErr.message;
+      if (typeof anyErr.message === "string") message = anyErr.message;
       const ctx = anyErr.context;
       if (ctx) {
         // If context is a fetch Response (FunctionsHttpError), try to read JSON
-        if (typeof (ctx as any).json === 'function') {
+        if (typeof (ctx as any).json === "function") {
           try {
             const payload = await (ctx as any).json();
-            console.log('parse-task response payload', payload);
-            if (payload && typeof payload === 'object') {
+            console.log("parse-task response payload", payload);
+            if (payload && typeof payload === "object") {
               const rec = payload as Record<string, unknown>;
-              const detailsStr =
-                typeof rec.details === 'string' && (rec.details as string).trim().length > 0
-                  ? (rec.details as string).trim()
-                  : null;
-              const errorStr =
-                typeof rec.error === 'string' && (rec.error as string).trim().length > 0
-                  ? (rec.error as string).trim()
-                  : null;
-              const messageStr =
-                typeof rec.message === 'string' && (rec.message as string).trim().length > 0
-                  ? (rec.message as string).trim()
-                  : null;
+              const detailsStr = typeof rec.details === "string" &&
+                  (rec.details as string).trim().length > 0
+                ? (rec.details as string).trim()
+                : null;
+              const errorStr = typeof rec.error === "string" &&
+                  (rec.error as string).trim().length > 0
+                ? (rec.error as string).trim()
+                : null;
+              const messageStr = typeof rec.message === "string" &&
+                  (rec.message as string).trim().length > 0
+                ? (rec.message as string).trim()
+                : null;
               message = detailsStr ?? errorStr ?? messageStr ?? message;
             }
           } catch {
             // fall back to generic handling below
           }
-        } else if (typeof ctx === 'string' && ctx.trim().length > 0) {
+        } else if (typeof ctx === "string" && ctx.trim().length > 0) {
           message = ctx;
-        } else if (typeof ctx === 'object') {
+        } else if (typeof ctx === "object") {
           const rec = ctx as Record<string, unknown>;
-          const detailsStr =
-            typeof rec.details === 'string' && (rec.details as string).trim().length > 0
-              ? (rec.details as string).trim()
-              : null;
-          const errorStr =
-            typeof rec.error === 'string' && (rec.error as string).trim().length > 0
-              ? (rec.error as string).trim()
-              : null;
-          const messageStr =
-            typeof rec.message === 'string' && (rec.message as string).trim().length > 0
-              ? (rec.message as string).trim()
-              : null;
+          const detailsStr = typeof rec.details === "string" &&
+              (rec.details as string).trim().length > 0
+            ? (rec.details as string).trim()
+            : null;
+          const errorStr = typeof rec.error === "string" &&
+              (rec.error as string).trim().length > 0
+            ? (rec.error as string).trim()
+            : null;
+          const messageStr = typeof rec.message === "string" &&
+              (rec.message as string).trim().length > 0
+            ? (rec.message as string).trim()
+            : null;
           message = detailsStr ?? errorStr ?? messageStr ?? message;
         }
       }
-    } else if (typeof error === 'string') {
+    } else if (typeof error === "string") {
       message = error;
     }
 
     try {
-      console.log('parse-task error', {
+      console.log("parse-task error", {
         message: message ?? null,
         context: (error as any)?.context ?? null,
       });
     } catch {}
 
-    throw new Error(message ?? 'Unable to parse capture text.');
+    throw new Error(message ?? "Unable to parse capture text.");
   }
 
-  if (!data || typeof data !== 'object') {
-    throw new Error('Empty response from parse-task function.');
+  if (!data || typeof data !== "object") {
+    throw new Error("Empty response from parse-task function.");
   }
 
   try {
-    console.log('parse-task response payload', data);
+    console.log("parse-task response payload", data);
   } catch {}
 
   return data as ParseTaskResponse;
 }
 
 export type ScheduleAdvisor = {
-  action: 'suggest_slot' | 'ask_overlap' | 'defer';
+  action: "suggest_slot" | "ask_overlap" | "defer";
   message: string;
   slot?: { start: string; end?: string | null } | null;
 };
 
-export type ScheduleDecision =
-  | {
-      type: 'preferred_conflict';
-      message: string;
-      preferred: { start: string; end: string };
-      conflicts: { id: string; summary?: string; start?: string; end?: string; diaGuru?: boolean }[];
-      suggestion?: { start: string; end: string } | null;
-      advisor?: ScheduleAdvisor | null;
-      metadata?: {
-        llmAttempted: boolean;
-        llmModel?: string | null;
-        llmError?: string | null;
-        preemptionAttempted?: boolean;
-        preemptionBlockedByLock?: boolean;
-        lockReasons?: {
-          captureId?: string;
-          summary?: string;
-          reason: 'freeze' | 'stability_window' | 'missing_capture';
-        }[];
-        preemptionRejectedReason?: 'net_gain_threshold';
-      };
-    };
+export type ScheduleDecision = {
+  type: "preferred_conflict";
+  message: string;
+  preferred: { start: string; end: string };
+  conflicts: {
+    id: string;
+    summary?: string;
+    start?: string;
+    end?: string;
+    diaGuru?: boolean;
+  }[];
+  suggestion?: { start: string; end: string } | null;
+  advisor?: ScheduleAdvisor | null;
+  metadata?: {
+    llmAttempted: boolean;
+    llmModel?: string | null;
+    llmError?: string | null;
+    preemptionAttempted?: boolean;
+    preemptionBlockedByLock?: boolean;
+    lockReasons?: {
+      captureId?: string;
+      summary?: string;
+      reason: "freeze" | "stability_window" | "missing_capture";
+    }[];
+    preemptionRejectedReason?: "net_gain_threshold";
+    suggestionConstraint?: {
+      reason:
+        | "slot_exceeds_deadline"
+        | "slot_outside_window"
+        | "no_legal_later_slot";
+      rejectedSlot?: { start: string; end: string } | null;
+      lateCandidate?: { start: string; end: string } | null;
+      deadline?: string | null;
+      windowStart?: string | null;
+      windowEnd?: string | null;
+    } | null;
+  };
+};
 
 export type SerializedChunk = {
   start: string;
@@ -452,7 +529,7 @@ export type PlanActionSummary = {
   actionId: string;
   captureId: string;
   content: string;
-  actionType: 'scheduled' | 'rescheduled' | 'unscheduled';
+  actionType: "scheduled" | "rescheduled" | "unscheduled";
   previousStart: string | null;
   previousEnd: string | null;
   nextStart: string | null;
@@ -486,30 +563,33 @@ export type ScheduleOptions = {
 
 export async function listCaptures(): Promise<Capture[]> {
   const { data, error } = await supabase
-    .from('capture_entries')
-    .select('*')
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true });
+    .from("capture_entries")
+    .select("*")
+    .eq("status", "pending")
+    .order("created_at", { ascending: true });
 
   if (error) throw error;
 
-  const entries = (data ?? []).map((row) => mapCaptureRow(row as Record<string, unknown>));
+  const entries = (data ?? []).map((row) =>
+    mapCaptureRow(row as Record<string, unknown>)
+  );
 
   return entries.sort((a, b) => b.priorityScore - a.priorityScore);
 }
 
 export async function listRecentCaptures(limit = 10): Promise<Capture[]> {
   const { data, error } = await supabase
-    .from('capture_entries')
-    .select('*')
-    .order('created_at', { ascending: false })
+    .from("capture_entries")
+    .select("*")
+    .order("created_at", { ascending: false })
     .limit(limit);
 
   if (error) throw error;
 
-  return (data ?? []).map((row) => mapCaptureRow(row as Record<string, unknown>));
+  return (data ?? []).map((row) =>
+    mapCaptureRow(row as Record<string, unknown>)
+  );
 }
-
 
 export async function addCapture(input: CaptureInput, userId?: string) {
   const {
@@ -531,7 +611,7 @@ export async function addCapture(input: CaptureInput, userId?: string) {
     importanceRationale = null,
     schedulingNotes = null,
     extractionJson = null,
-    constraintType = 'flexible',
+    constraintType = "flexible",
     constraintTime = null,
     constraintEnd = null,
     constraintDate = null,
@@ -544,17 +624,18 @@ export async function addCapture(input: CaptureInput, userId?: string) {
     externalityScore = 0,
     taskTypeHint = null,
   } = input;
-  const targetUserId =
-    userId ??
+  const targetUserId = userId ??
     (await supabase.auth.getSession()).data.session?.user.id ??
     null;
 
   if (!targetUserId) {
-    throw new Error('No authenticated user found while creating capture entry.');
+    throw new Error(
+      "No authenticated user found while creating capture entry.",
+    );
   }
 
   const { data, error } = await supabase
-    .from('capture_entries')
+    .from("capture_entries")
     .insert({
       content,
       estimated_minutes: estimatedMinutes,
@@ -588,7 +669,7 @@ export async function addCapture(input: CaptureInput, userId?: string) {
       externality_score: externalityScore,
       task_type_hint: taskTypeHint,
     })
-    .select('*')
+    .select("*")
     .single();
 
   if (error) throw error;
@@ -602,13 +683,13 @@ export async function updateCaptureStatus(
   scheduledFor?: Date | null,
 ) {
   const { data, error } = await supabase
-    .from('capture_entries')
+    .from("capture_entries")
     .update({
       status,
       scheduled_for: scheduledFor ? scheduledFor.toISOString() : null,
     })
-    .eq('id', id)
-    .select('*')
+    .eq("id", id)
+    .select("*")
     .single();
 
   if (error) throw error;
@@ -618,10 +699,10 @@ export async function updateCaptureStatus(
 
 export async function listScheduledCaptures(): Promise<Capture[]> {
   const { data, error } = await supabase
-    .from('capture_entries')
-    .select('*')
-    .eq('status', 'scheduled')
-    .order('planned_start', { ascending: true });
+    .from("capture_entries")
+    .select("*")
+    .eq("status", "scheduled")
+    .order("planned_start", { ascending: true });
 
   if (error) throw error;
 
@@ -633,10 +714,10 @@ export async function listScheduledCaptures(): Promise<Capture[]> {
 
 export async function invokeScheduleCapture(
   captureId: string,
-  action: 'schedule' | 'reschedule' = 'schedule',
+  action: "schedule" | "reschedule" = "schedule",
   options?: ScheduleOptions,
-) : Promise<ScheduleCaptureResponse> {
-  const { data, error } = await supabase.functions.invoke('schedule-capture', {
+): Promise<ScheduleCaptureResponse> {
+  const { data, error } = await supabase.functions.invoke("schedule-capture", {
     body: {
       captureId,
       action,
@@ -662,13 +743,16 @@ export async function invokeScheduleCapture(
 
 export async function invokeCaptureCompletion(
   captureId: string,
-  action: 'complete' | 'reschedule',
+  action: "complete" | "reschedule",
 ) {
-  const { data, error } = await supabase.functions.invoke('schedule-capture', {
+  const { data, error } = await supabase.functions.invoke("schedule-capture", {
     body: { captureId, action },
   });
   if (error) throw error;
-  const payload = data as { capture: Record<string, unknown> | null; message: string };
+  const payload = data as {
+    capture: Record<string, unknown> | null;
+    message: string;
+  };
   return {
     ...payload,
     capture: payload.capture ? mapCaptureRow(payload.capture) : null,
@@ -676,7 +760,7 @@ export async function invokeCaptureCompletion(
 }
 
 export async function syncCaptureEvents() {
-  const { data, error } = await supabase.functions.invoke('sync-captures');
+  const { data, error } = await supabase.functions.invoke("sync-captures");
   if (error) throw error;
   return data as {
     message: string;
@@ -687,7 +771,7 @@ export async function syncCaptureEvents() {
 }
 
 export async function undoPlan(planId: string) {
-  const { data, error } = await supabase.functions.invoke('undo-plan', {
+  const { data, error } = await supabase.functions.invoke("undo-plan", {
     body: { planId },
   });
   if (error) throw error;
@@ -699,12 +783,13 @@ export async function undoPlan(planId: string) {
 }
 
 export async function lockCaptureWindow(captureId: string, hours = 24) {
-  const freezeUntil = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+  const freezeUntil = new Date(Date.now() + hours * 60 * 60 * 1000)
+    .toISOString();
   const { data, error } = await supabase
-    .from('capture_entries')
+    .from("capture_entries")
     .update({ freeze_until: freezeUntil })
-    .eq('id', captureId)
-    .select('*')
+    .eq("id", captureId)
+    .select("*")
     .single();
 
   if (error) throw error;

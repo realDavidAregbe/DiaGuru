@@ -20,9 +20,15 @@ import {
   undoPlan,
 } from "@/lib/capture";
 import {
+  extractScheduleReasons,
+  formatCaptureScheduleSummary,
+  formatIsoLabel,
+  getScheduleReasonPreview,
+} from "@/lib/schedule-insights";
+import {
+  type CalendarHealth,
   connectGoogleCalendar,
   getCalendarHealth,
-  type CalendarHealth,
 } from "@/lib/google-connect";
 import {
   cancelScheduledNotification,
@@ -49,6 +55,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 
 const IMPORTANCE_LEVELS = [
   { value: 1, label: "Low" },
@@ -81,6 +88,12 @@ type HomeStatusNotice = {
   message: string;
 };
 
+type ExternalConflictState = {
+  captureId: string;
+  mode: "schedule" | "reschedule";
+  decision: ScheduleDecision;
+};
+
 function extractScheduleError(error: unknown) {
   if (!error) return "Unable to schedule this item.";
   if (typeof error === "string") return error;
@@ -99,6 +112,101 @@ function extractScheduleError(error: unknown) {
   }
 
   return "Unable to schedule this item.";
+}
+
+type ScheduleErrorPayload = {
+  error?: string;
+  reason?: string;
+  deadline?: string | null;
+  window_start?: string | null;
+  window_end?: string | null;
+  slot?: { start?: string; end?: string } | null;
+  late_candidate?: { start?: string; end?: string } | null;
+};
+
+function formatSlotLabel(slot?: { start?: string; end?: string } | null) {
+  if (!slot?.start) return null;
+  const start = new Date(slot.start);
+  if (Number.isNaN(start.getTime())) return null;
+  const startText = start.toLocaleString();
+  if (!slot.end) return startText;
+  const end = new Date(slot.end);
+  if (Number.isNaN(end.getTime())) return startText;
+  const endText = end.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${startText} -> ${endText}`;
+}
+
+function extractPrimaryExplanationReason(explanation: unknown) {
+  if (!explanation || typeof explanation !== "object") return null;
+  const reasons = (explanation as { reasons?: unknown }).reasons;
+  if (!Array.isArray(reasons)) return null;
+  for (const reason of reasons) {
+    const text = typeof reason === "string" ? reason.trim() : "";
+    if (text) return text;
+  }
+  return null;
+}
+
+function formatScheduleFailurePayload(payload: ScheduleErrorPayload | null) {
+  if (!payload) return null;
+  const reason = payload.reason;
+  const slotText = formatSlotLabel(payload.slot);
+  const lateText = formatSlotLabel(payload.late_candidate);
+  const deadlineText = formatIsoLabel(payload.deadline ?? null);
+  const windowEndText = formatIsoLabel(payload.window_end ?? null);
+
+  if (reason === "slot_exceeds_deadline") {
+    if (slotText && deadlineText) {
+      return `That time cannot be used because ${slotText} would run past the deadline at ${deadlineText}.${
+        lateText ? ` Next open time after that: ${lateText}.` : ""
+      }`;
+    }
+    if (deadlineText) {
+      return `That time cannot be used because it would run past the deadline at ${deadlineText}.${
+        lateText ? ` Next open time after that: ${lateText}.` : ""
+      }`;
+    }
+  }
+
+  if (reason === "slot_outside_window") {
+    if (slotText && windowEndText) {
+      return `That time cannot be used because ${slotText} falls outside the allowed window ending ${windowEndText}.${
+        lateText ? ` Closest later opening: ${lateText}.` : ""
+      }`;
+    }
+    return "That time falls outside this task's allowed scheduling window.";
+  }
+
+  if (reason === "no_slot") {
+    if (deadlineText) {
+      return `DiaGuru could not find a legal slot before ${deadlineText}.${
+        lateText ? ` Next open time after that: ${lateText}.` : ""
+      }`;
+    }
+    return "DiaGuru could not find a legal slot within the current constraints.";
+  }
+
+  return typeof payload.error === "string" && payload.error.trim().length > 0
+    ? payload.error.trim()
+    : null;
+}
+
+async function readScheduleErrorPayload(error: unknown) {
+  try {
+    const ctx = (error as { context?: unknown })?.context as
+      | { json?: () => Promise<unknown> }
+      | undefined;
+    if (!ctx || typeof ctx.json !== "function") return null;
+    const payload = await ctx.json();
+    console.log("schedule-capture response payload", payload);
+    if (!payload || typeof payload !== "object") return null;
+    return payload as ScheduleErrorPayload;
+  } catch {
+    return null;
+  }
 }
 
 function formatConflictMessage(decision: ScheduleDecision) {
@@ -133,15 +241,61 @@ function formatConflictMessage(decision: ScheduleDecision) {
         reason.reason === "freeze"
           ? "is locked and cannot be moved yet."
           : reason.reason === "stability_window"
-          ? "is too close to its start time to move safely."
-          : "could not be resolved from the database.";
+            ? "is too close to its start time to move safely."
+            : "could not be resolved from the database.";
       lines.push(`- ${label} ${detail}`);
     }
-  } else if (decision.metadata?.preemptionRejectedReason === "net_gain_threshold") {
+  } else if (
+    decision.metadata?.preemptionRejectedReason === "net_gain_threshold"
+  ) {
     lines.push(
       "",
       "DiaGuru checked whether moving the conflicting task was worth it and kept the existing schedule.",
     );
+  }
+  const suggestionConstraint = decision.metadata?.suggestionConstraint;
+  if (suggestionConstraint) {
+    if (
+      suggestionConstraint.reason === "slot_exceeds_deadline" &&
+      suggestionConstraint.rejectedSlot?.start
+    ) {
+      const rejectedLabel = formatSlotLabel(suggestionConstraint.rejectedSlot);
+      const deadlineLabel = formatIsoLabel(
+        suggestionConstraint.deadline ?? null,
+      );
+      lines.push(
+        "",
+        rejectedLabel && deadlineLabel
+          ? `The next free time is ${rejectedLabel}, but it would miss the deadline at ${deadlineLabel}.`
+          : "The next free time would miss the deadline for this task.",
+      );
+    } else if (
+      suggestionConstraint.reason === "slot_outside_window" &&
+      suggestionConstraint.rejectedSlot?.start
+    ) {
+      const rejectedLabel = formatSlotLabel(suggestionConstraint.rejectedSlot);
+      const windowEndLabel = formatIsoLabel(
+        suggestionConstraint.windowEnd ?? null,
+      );
+      lines.push(
+        "",
+        rejectedLabel && windowEndLabel
+          ? `The next free time is ${rejectedLabel}, but it falls outside the allowed window ending ${windowEndLabel}.`
+          : "The next free time falls outside the allowed window for this task.",
+      );
+    } else if (suggestionConstraint.reason === "no_legal_later_slot") {
+      lines.push(
+        "",
+        "There is no later legal slot inside the current deadline/window.",
+      );
+    }
+
+    if (suggestionConstraint.lateCandidate?.start) {
+      const lateLabel = formatSlotLabel(suggestionConstraint.lateCandidate);
+      if (lateLabel) {
+        lines.push("", `Closest later opening: ${lateLabel}`);
+      }
+    }
   }
   if (decision.suggestion) {
     const suggestionStart = new Date(
@@ -169,26 +323,28 @@ function formatConflictMessage(decision: ScheduleDecision) {
       });
     lines.push(
       "",
-      `Assistant suggestion: ${advisorStart}${advisorEnd ? ` -> ${advisorEnd}` : ""}`,
+      `Assistant suggestion: ${advisorStart}${
+        advisorEnd ? ` -> ${advisorEnd}` : ""
+      }`,
     );
   }
   return lines.join("\n");
 }
 
-function normalizeExtractionJson(value: unknown) {
-  if (!value) return null;
-  if (typeof value === "object") return value as Record<string, unknown>;
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      if (parsed && typeof parsed === "object") {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      return null;
-    }
-  }
-  return null;
+function hasExternalConflicts(decision: ScheduleDecision) {
+  return decision.conflicts.some((conflict) => !conflict.diaGuru);
+}
+
+function formatExternalConflictSummary(decision: ScheduleDecision) {
+  return decision.conflicts
+    .filter((conflict) => !conflict.diaGuru)
+    .map((conflict) => {
+      const label = conflict.summary?.trim() || "Another calendar event";
+      const slot = formatSlotLabel(
+        conflict.start ? { start: conflict.start, end: conflict.end } : null,
+      );
+      return slot ? `${label} (${slot})` : label;
+    });
 }
 
 function normalizeDisplayTitle(value: unknown) {
@@ -197,149 +353,10 @@ function normalizeDisplayTitle(value: unknown) {
   return flattened.length > 0 ? flattened : null;
 }
 
-function formatIsoLabel(value: unknown) {
-  if (typeof value !== "string") return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-}
-
-function extractReasonsFromExtraction(
-  extraction: Record<string, unknown> | null,
-) {
-  if (!extraction) return [];
-  const reasons: string[] = [];
-  const ex = extraction as {
-    scheduled_time?: { datetime?: string | null } | null;
-    execution_window?: { start?: string | null; end?: string | null } | null;
-    deadline?: { datetime?: string | null } | null;
-    time_preferences?: {
-      time_of_day?: string | null;
-      day?: string | null;
-    } | null;
-    importance?: { rationale?: string | null } | null;
-  };
-
-  const scheduledLabel = formatIsoLabel(ex.scheduled_time?.datetime ?? null);
-  if (scheduledLabel) {
-    reasons.push(`Requested time: ${scheduledLabel}.`);
-  }
-
-  const windowStart = formatIsoLabel(ex.execution_window?.start ?? null);
-  const windowEnd = formatIsoLabel(ex.execution_window?.end ?? null);
-  if (windowStart || windowEnd) {
-    const range =
-      windowStart && windowEnd
-        ? `${windowStart} -> ${windowEnd}`
-        : (windowStart ?? windowEnd);
-    reasons.push(`Requested window: ${range}.`);
-  }
-
-  const deadlineLabel = formatIsoLabel(ex.deadline?.datetime ?? null);
-  if (deadlineLabel) {
-    reasons.push(`Deadline: ${deadlineLabel}.`);
-  }
-
-  if (ex.time_preferences?.time_of_day) {
-    reasons.push(`Time preference: ${ex.time_preferences.time_of_day}.`);
-  }
-  if (ex.time_preferences?.day) {
-    reasons.push(`Day preference: ${ex.time_preferences.day}.`);
-  }
-
-  if (ex.importance?.rationale) {
-    reasons.push(ex.importance.rationale);
-  }
-
-  return reasons;
-}
-
-function extractScheduleReasons(capture: Capture) {
-  const fallback = "Scheduled by DiaGuru based on your constraints.";
-  const raw = capture.scheduling_notes;
-  const scheduleReasons: string[] = [];
-  let scheduleNote: string | null = null;
-
-  if (raw && typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") {
-        const scheduleExplanation = (parsed as Record<string, unknown>)
-          .schedule_explanation as { reasons?: unknown } | undefined;
-        if (
-          scheduleExplanation?.reasons &&
-          Array.isArray(scheduleExplanation.reasons)
-        ) {
-          const reasons = scheduleExplanation.reasons
-            .map((reason) => String(reason))
-            .filter((r) => r.trim().length > 0);
-          scheduleReasons.push(...reasons);
-        }
-        const note = (parsed as Record<string, unknown>).schedule_note;
-        if (typeof note === "string" && note.trim().length > 0) {
-          scheduleNote = note.trim();
-        }
-      }
-    } catch {
-      scheduleNote = raw.trim() || null;
-    }
-  }
-
-  const extractionReasons = extractReasonsFromExtraction(
-    normalizeExtractionJson(capture.extraction_json),
-  );
-
-  const combined =
-    scheduleReasons.length > 0
-      ? scheduleReasons
-      : scheduleNote
-        ? [scheduleNote]
-        : [];
-
-  if (combined.length < 2 && extractionReasons.length > 0) {
-    combined.push(...extractionReasons);
-  }
-
-  const unique = Array.from(
-    new Set(combined.map((reason) => reason.trim()).filter(Boolean)),
-  );
-  return unique.length > 0 ? unique.slice(0, 5) : [fallback];
-}
-
 function showScheduleWhy(capture: Capture) {
   const reasons = extractScheduleReasons(capture);
   const body = reasons.map((reason) => `- ${reason}`).join("\n");
   Alert.alert("Why this time?", body);
-}
-
-function formatCaptureScheduleSummary(capture: Capture | null) {
-  if (!capture?.planned_start) return null;
-  const start = new Date(capture.planned_start);
-  if (Number.isNaN(start.getTime())) return null;
-
-  const dateText = start.toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-  });
-  const startText = start.toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-
-  if (!capture.planned_end) {
-    return `${dateText} at ${startText}`;
-  }
-
-  const end = new Date(capture.planned_end);
-  if (Number.isNaN(end.getTime())) {
-    return `${dateText} at ${startText}`;
-  }
-
-  const endText = end.toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return `${dateText}, ${startText} - ${endText}`;
 }
 
 function summarizePlan(plan: PlanSummary) {
@@ -360,7 +377,9 @@ function summarizePlan(plan: PlanSummary) {
   const parts: string[] = [];
   if (scheduledCount > 0) {
     parts.push(
-      `${scheduledCount} ${scheduledCount === 1 ? "session" : "sessions"} scheduled`,
+      `${scheduledCount} ${
+        scheduledCount === 1 ? "session" : "sessions"
+      } scheduled`,
     );
   }
   if (movedCount > 0) {
@@ -370,11 +389,56 @@ function summarizePlan(plan: PlanSummary) {
   }
   if (removedCount > 0) {
     parts.push(
-      `${removedCount} ${removedCount === 1 ? "session" : "sessions"} unscheduled`,
+      `${removedCount} ${
+        removedCount === 1 ? "session" : "sessions"
+      } unscheduled`,
     );
   }
 
-  return parts.length > 0 ? parts.join(" • ") : "DiaGuru updated your schedule.";
+  return parts.length > 0
+    ? parts.join(" • ")
+    : "DiaGuru updated your schedule.";
+}
+
+function formatPlanSummary(plan: PlanSummary) {
+  if (plan.actions.length === 0) {
+    return "DiaGuru updated your schedule.";
+  }
+
+  const scheduledCount = plan.actions.filter(
+    (action) => action.actionType === "scheduled",
+  ).length;
+  const movedCount = plan.actions.filter(
+    (action) => action.actionType === "rescheduled",
+  ).length;
+  const removedCount = plan.actions.filter(
+    (action) => action.actionType === "unscheduled",
+  ).length;
+
+  const parts: string[] = [];
+  if (scheduledCount > 0) {
+    parts.push(
+      `${scheduledCount} ${
+        scheduledCount === 1 ? "session" : "sessions"
+      } scheduled`,
+    );
+  }
+  if (movedCount > 0) {
+    parts.push(
+      `${movedCount} ${movedCount === 1 ? "session" : "sessions"} moved`,
+    );
+  }
+  if (removedCount > 0) {
+    parts.push(
+      `${removedCount} ${
+        removedCount === 1 ? "session" : "sessions"
+      } unscheduled`,
+    );
+  }
+
+  return parts.length > 0
+    ? parts.join(" | ")
+    : "DiaGuru updated your schedule.";
 }
 
 type DerivedConstraint = {
@@ -732,7 +796,9 @@ function containsKeyword(content: string, keywords: string[]) {
 
     if (hasInternalWhitespace) {
       const pattern = new RegExp(
-        `${requiresLeadingWhitespace ? "(?:^|\\s)" : ""}${escapeRegex(trimmed)}${requiresTrailingWhitespace ? "(?:\\s|$)" : ""} `,
+        `${requiresLeadingWhitespace ? "(?:^|\\s)" : ""}${escapeRegex(
+          trimmed,
+        )}${requiresTrailingWhitespace ? "(?:\\s|$)" : ""} `,
         "i",
       );
       return pattern.test(content);
@@ -789,6 +855,7 @@ export default function HomeTab() {
   const { session } = useSupabaseSession();
   const userId = session?.user?.id ?? null;
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const timezone = useMemo(() => {
     try {
       return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
@@ -845,6 +912,8 @@ export default function HomeTab() {
   const [statusNotice, setStatusNotice] = useState<HomeStatusNotice | null>(
     null,
   );
+  const [externalConflictState, setExternalConflictState] =
+    useState<ExternalConflictState | null>(null);
   const [captureDetailsOpen, setCaptureDetailsOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
 
@@ -1100,13 +1169,23 @@ export default function HomeTab() {
             setRecentOverlapBudget(null);
           }
 
+          if (response.decision) {
+            return response;
+          }
+
           const scheduledLabel = formatCaptureScheduleSummary(response.capture);
+          const explanationReason = extractPrimaryExplanationReason(
+            response.explanation,
+          );
           const successTitle =
             mode === "reschedule" ? "Rescheduled" : "Scheduled";
-          const successMessage =
+          const baseSuccessMessage =
             scheduledLabel && response.capture?.content
               ? `${response.capture.content} is set for ${scheduledLabel}.`
               : response.message || "Your capture was scheduled successfully.";
+          const successMessage = explanationReason
+            ? `${baseSuccessMessage} ${explanationReason}`
+            : baseSuccessMessage;
 
           if (!response.planSummary) {
             setStatusNotice({
@@ -1123,26 +1202,9 @@ export default function HomeTab() {
         return response;
       } catch (error: any) {
         console.log("schedule-capture error", error);
-        let message = extractScheduleError(error);
-        // Try to extract JSON error payload from FunctionsHttpError
-        try {
-          const ctx = (error as any)?.context;
-          if (ctx && typeof ctx.json === "function") {
-            const payload = await ctx.json();
-            console.log("schedule-capture response payload", payload);
-            if (payload?.error) message = String(payload.error);
-            if (payload?.reason === "no_slot" && payload?.deadline) {
-              message = `${message} (no legal slot before ${payload.deadline})`;
-            }
-            if (
-              payload?.reason === "slot_exceeds_deadline" &&
-              payload?.slot?.end &&
-              payload?.deadline
-            ) {
-              message = `${message} (slot ${payload.slot.end} > deadline ${payload.deadline})`;
-            }
-          }
-        } catch {}
+        const payload = await readScheduleErrorPayload(error);
+        const message =
+          formatScheduleFailurePayload(payload) ?? extractScheduleError(error);
         setStatusNotice({
           tone: "warning",
           title: "Scheduling failed",
@@ -1167,6 +1229,135 @@ export default function HomeTab() {
       timezoneOffsetMinutes,
       userId,
     ],
+  );
+
+  const dismissExternalConflict = useCallback(() => {
+    if (scheduling) return;
+    setExternalConflictState(null);
+  }, [scheduling]);
+
+  const presentScheduleConflict = useCallback(
+    (
+      captureId: string,
+      decision: ScheduleDecision,
+      mode: "schedule" | "reschedule" = "schedule",
+    ) => {
+      if (hasExternalConflicts(decision)) {
+        setExternalConflictState({
+          captureId,
+          decision,
+          mode,
+        });
+        return;
+      }
+
+      const message = formatConflictMessage(decision);
+      const actions: {
+        text: string;
+        style?: "default" | "cancel" | "destructive";
+        onPress?: () => void;
+      }[] = [{ text: "Cancel", style: "cancel" }];
+
+      if (decision.suggestion?.start && decision.suggestion?.end) {
+        actions.push({
+          text: "Use suggested time",
+          onPress: async () => {
+            const followUp = await scheduleTopCapture(captureId, mode, {
+              preferredStart: decision.suggestion?.start,
+              preferredEnd: decision.suggestion?.end,
+              allowRebalance: true,
+            });
+            if (followUp?.decision) {
+              presentScheduleConflict(captureId, followUp.decision, mode);
+            }
+          },
+        });
+      }
+
+      actions.push({
+        text: "Schedule anyway / overlap",
+        onPress: async () => {
+          const overlapResponse = await scheduleTopCapture(captureId, mode, {
+            preferredStart: decision.preferred.start,
+            preferredEnd: decision.preferred.end,
+            allowOverlap: true,
+            allowRebalance: false,
+          });
+          if (overlapResponse?.decision) {
+            presentScheduleConflict(captureId, overlapResponse.decision, mode);
+          }
+        },
+      });
+
+      Alert.alert("Scheduling conflict", message, actions);
+    },
+    [scheduleTopCapture],
+  );
+
+  const handleExternalConflictChoice = useCallback(
+    async (choice: "suggested" | "overlap" | "keep") => {
+      const current = externalConflictState;
+      if (!current) return;
+
+      setExternalConflictState(null);
+
+      if (choice === "keep") {
+        const preferredLabel = formatSlotLabel(current.decision.preferred);
+        setStatusNotice({
+          tone: "info",
+          title: "Requested time kept in queue",
+          message: preferredLabel
+            ? `DiaGuru kept ${preferredLabel} as your intended time. Move the other event, refresh, then schedule this capture again.`
+            : "DiaGuru kept your intended time in the queue. Move the other event, refresh, then schedule this capture again.",
+        });
+        return;
+      }
+
+      if (
+        choice === "suggested" &&
+        current.decision.suggestion?.start &&
+        current.decision.suggestion?.end
+      ) {
+        const followUp = await scheduleTopCapture(
+          current.captureId,
+          current.mode,
+          {
+            preferredStart: current.decision.suggestion.start,
+            preferredEnd: current.decision.suggestion.end,
+            allowRebalance: true,
+          },
+        );
+        if (followUp?.decision) {
+          presentScheduleConflict(
+            current.captureId,
+            followUp.decision,
+            current.mode,
+          );
+        }
+        return;
+      }
+
+      if (choice === "overlap") {
+        const overlapResponse = await scheduleTopCapture(
+          current.captureId,
+          current.mode,
+          {
+            preferredStart: current.decision.preferred.start,
+            preferredEnd: current.decision.preferred.end,
+            allowOverlap: true,
+            allowRebalance: false,
+          },
+        );
+        if (overlapResponse?.decision) {
+          presentScheduleConflict(
+            current.captureId,
+            overlapResponse.decision,
+            current.mode,
+          );
+        }
+      }
+    },
+    [externalConflictState, presentScheduleConflict, scheduleTopCapture],
   );
 
   const scheduleEntireQueue = useCallback(async () => {
@@ -1324,7 +1515,9 @@ export default function HomeTab() {
         title: "Queue updated",
         message:
           scheduledCount > 0
-            ? `Scheduled ${scheduledCount} of ${queue.length} ${queue.length === 1 ? "item" : "items"} in your queue.`
+            ? `Scheduled ${scheduledCount} of ${queue.length} ${
+                queue.length === 1 ? "item" : "items"
+              } in your queue.`
             : "No new items were scheduled from the queue.",
       });
       return scheduledCount;
@@ -1503,39 +1696,11 @@ export default function HomeTab() {
       });
       const decision = response?.decision;
       if (decision?.type === "preferred_conflict") {
-        const message = formatConflictMessage(decision);
-        const actions: {
-          text: string;
-          style?: "default" | "cancel" | "destructive";
-          onPress?: () => void;
-        }[] = [{ text: "Cancel", style: "cancel" }];
-
-        if (decision.suggestion?.start && decision.suggestion?.end) {
-          actions.push({
-            text: "Use suggested time",
-            onPress: () =>
-              scheduleTopCapture(captureId, "schedule", {
-                preferredStart: decision.suggestion?.start,
-                preferredEnd: decision.suggestion?.end,
-                allowRebalance: true,
-              }),
-          });
-        }
-
-        actions.push({
-          text: "Overlap anyway",
-          onPress: () =>
-            scheduleTopCapture(captureId, "schedule", {
-              allowOverlap: true,
-              allowRebalance: false,
-            }),
-        });
-
-        Alert.alert("Scheduling conflict", message, actions);
+        presentScheduleConflict(captureId, decision, "schedule");
       }
       return response;
     },
-    [scheduleTopCapture],
+    [presentScheduleConflict, scheduleTopCapture],
   );
 
   const handleFollowUpCancel = useCallback(() => {
@@ -1753,20 +1918,31 @@ export default function HomeTab() {
     () => overdueScheduled.slice(0, 1),
     [overdueScheduled],
   );
-  const upcomingPreview = useMemo(
-    () => upcomingScheduled.slice(0, 2),
+  const nextUpcomingCapture = useMemo(
+    () => upcomingScheduled[0] ?? null,
     [upcomingScheduled],
   );
+  const remainingUpcomingCount = Math.max(
+    0,
+    upcomingScheduled.length - (nextUpcomingCapture ? 1 : 0),
+  );
   const followUpVisible = Boolean(followUpState);
+  const externalConflictVisible = Boolean(externalConflictState);
+  const externalConflictSlotLabel = externalConflictState
+    ? formatSlotLabel(externalConflictState.decision.preferred)
+    : null;
+  const externalConflictSummaries = externalConflictState
+    ? formatExternalConflictSummary(externalConflictState.decision)
+    : [];
   const selectedImportanceLabel =
     IMPORTANCE_LEVELS.find((level) => level.value === importance)?.label ??
     "Medium";
-  const normalizeCaptureDetailsSummary = (value: string) => value.replace(
-    /[^\x20-\x7E]+/g,
-    " - ",
-  );
+  const normalizeCaptureDetailsSummary = (value: string) =>
+    value.replace(/[^\x20-\x7E]+/g, " - ");
   const captureDetailsSummary = `${
-    minutesInput.trim().length > 0 ? `${minutesInput.trim()} min` : "Auto duration"
+    minutesInput.trim().length > 0
+      ? `${minutesInput.trim()} min`
+      : "Auto duration"
   } • ${selectedImportanceLabel} priority`;
 
   const captureDetailsSummaryText = normalizeCaptureDetailsSummary(
@@ -1788,7 +1964,10 @@ export default function HomeTab() {
         } else if (action === "reschedule") {
           await invokeCaptureCompletion(capture.id, "reschedule");
           // Immediately try to schedule this capture again
-          await scheduleTopCapture(capture.id, "schedule");
+          const response = await scheduleTopCapture(capture.id, "schedule");
+          if (response?.decision) {
+            presentScheduleConflict(capture.id, response.decision, "schedule");
+          }
         }
         await Promise.all([loadPending(), loadScheduled()]);
       } catch (error: any) {
@@ -1800,7 +1979,13 @@ export default function HomeTab() {
         setActionCaptureId(null);
       }
     },
-    [loadPending, loadScheduled, scheduleTopCapture, userId],
+    [
+      loadPending,
+      loadScheduled,
+      presentScheduleConflict,
+      scheduleTopCapture,
+      userId,
+    ],
   );
 
   const captureForm = (
@@ -1910,7 +2095,8 @@ export default function HomeTab() {
             <View style={styles.disclosureCopy}>
               <Text style={styles.disclosureTitle}>Queue</Text>
               <Text style={styles.disclosureSummary}>
-                {pending.length} {pending.length === 1 ? "item" : "items"} waiting
+                {pending.length} {pending.length === 1 ? "item" : "items"}{" "}
+                waiting
               </Text>
             </View>
             <Text style={styles.disclosureAction}>
@@ -1949,9 +2135,11 @@ export default function HomeTab() {
                 />
               ))}
               {queueExtras > 0 ? (
-                <Text
-                  style={styles.sectionSubtext}
-                >{`+ ${queueExtras} more ${queueExtras === 1 ? "item" : "items"} in queue`}</Text>
+                <Text style={styles.sectionSubtext}>
+                  {`+ ${queueExtras} more ${
+                    queueExtras === 1 ? "item" : "items"
+                  } in queue`}
+                </Text>
               ) : null}
             </View>
           ) : null}
@@ -1962,10 +2150,21 @@ export default function HomeTab() {
 
   const scheduledSection = (
     <View style={styles.captureSection}>
-      <Text style={styles.sectionTitle}>Scheduled</Text>
-      <Text style={styles.sectionSubtext}>
-        Confirm finished items so the schedule stays current.
-      </Text>
+      <View style={styles.sectionHeaderRow}>
+        <View style={styles.sectionHeaderCopy}>
+          <Text style={styles.sectionTitle}>Schedule snapshot</Text>
+          <Text style={styles.sectionSubtext}>
+            Home stays focused on capture. Use Calendar for the full schedule
+            and reasoning.
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.inlineLinkButton}
+          onPress={() => router.push("/calendar")}
+        >
+          <Text style={styles.inlineLinkText}>Open calendar</Text>
+        </TouchableOpacity>
+      </View>
 
       {scheduledLoading ? (
         <ActivityIndicator />
@@ -1994,24 +2193,28 @@ export default function HomeTab() {
                 />
               ))}
               {overdueScheduled.length > overduePreview.length ? (
-                <Text
-                  style={styles.sectionSubtext}
-                >{`+ ${overdueScheduled.length - overduePreview.length} more awaiting confirmation`}</Text>
+                <Text style={styles.sectionSubtext}>
+                  {`+ ${
+                    overdueScheduled.length - overduePreview.length
+                  } more awaiting confirmation`}
+                </Text>
               ) : null}
             </View>
           )}
 
-          {upcomingScheduled.length > 0 && (
+          {nextUpcomingCapture && (
             <View style={{ gap: 12 }}>
-              <Text style={styles.sectionSubtitle}>Upcoming</Text>
-              {upcomingPreview.map((capture) => (
-                <ScheduledSummaryCard key={capture.id} capture={capture} />
-              ))}
-              {upcomingScheduled.length > upcomingPreview.length ? (
-                <Text
-                  style={styles.sectionSubtext}
-                >{`+ ${upcomingScheduled.length - upcomingPreview.length} more scheduled`}</Text>
-              ) : null}
+              <Text style={styles.sectionSubtitle}>Up next</Text>
+              <ScheduledSummaryCard capture={nextUpcomingCapture} />
+              <View style={styles.snapshotFooter}>
+                <Text style={styles.sectionSubtext}>
+                  {remainingUpcomingCount > 0
+                    ? `+ ${remainingUpcomingCount} more ${
+                        remainingUpcomingCount === 1 ? "session" : "sessions"
+                      } on your calendar`
+                    : "Calendar has the full sequence and external context."}
+                </Text>
+              </View>
             </View>
           )}
         </>
@@ -2024,7 +2227,9 @@ export default function HomeTab() {
       <View style={styles.noticeHeader}>
         <View style={styles.noticeCopy}>
           <Text style={styles.noticeTitle}>Schedule updated</Text>
-          <Text style={styles.noticeMessage}>{summarizePlan(recentPlan)}</Text>
+          <Text style={styles.noticeMessage}>
+            {formatPlanSummary(recentPlan)}
+          </Text>
         </View>
         <TouchableOpacity onPress={dismissPlanSummary}>
           <Text style={styles.noticeDismiss}>Dismiss</Text>
@@ -2032,7 +2237,10 @@ export default function HomeTab() {
       </View>
       <View style={styles.noticeActions}>
         <TouchableOpacity
-          style={[styles.secondaryButton, undoingPlan && styles.primaryButtonDisabled]}
+          style={[
+            styles.secondaryButton,
+            undoingPlan && styles.primaryButtonDisabled,
+          ]}
           onPress={handlePlanUndo}
           disabled={undoingPlan}
         >
@@ -2096,8 +2304,8 @@ export default function HomeTab() {
               </View>
             </View>
             <Text style={styles.heroSubtitle}>
-              Add the next task, set the basics, and let DiaGuru place it
-              around the rest of your day.
+              Add the next task, set the basics, and let DiaGuru place it around
+              the rest of your day.
             </Text>
           </View>
           {feedbackSection}
@@ -2167,6 +2375,89 @@ export default function HomeTab() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal
+        visible={externalConflictVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={dismissExternalConflict}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.followUpBackdrop}
+        >
+          <View style={styles.followUpCard}>
+            <Text style={styles.followUpTitle}>That time is blocked</Text>
+            <Text style={styles.followUpPrompt}>
+              {externalConflictSlotLabel
+                ? `Another calendar event is in the way of ${externalConflictSlotLabel}. Choose how you want DiaGuru to handle it.`
+                : "Another calendar event is in the way. Choose how you want DiaGuru to handle it."}
+            </Text>
+            {externalConflictSummaries.length > 0 ? (
+              <View style={styles.conflictSummaryList}>
+                {externalConflictSummaries.map((summary) => (
+                  <Text key={summary} style={styles.followUpHint}>
+                    - {summary}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
+            <View style={styles.conflictChoiceStack}>
+              {externalConflictState?.decision.suggestion?.start &&
+              externalConflictState?.decision.suggestion?.end ? (
+                <TouchableOpacity
+                  style={[styles.secondaryButton, styles.modalFullWidthButton]}
+                  onPress={() => handleExternalConflictChoice("suggested")}
+                  disabled={scheduling}
+                >
+                  <Text
+                    style={[
+                      styles.secondaryButtonText,
+                      scheduling && styles.secondaryButtonTextDisabled,
+                    ]}
+                  >
+                    Use next best time
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                style={[
+                  styles.confirmButton,
+                  styles.modalFullWidthButton,
+                  scheduling && styles.confirmButtonDisabled,
+                ]}
+                onPress={() => handleExternalConflictChoice("overlap")}
+                disabled={scheduling}
+              >
+                <Text style={styles.confirmButtonText}>
+                  {scheduling ? "Scheduling..." : "Schedule anyway / overlap"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.secondaryButton, styles.modalFullWidthButton]}
+                onPress={() => handleExternalConflictChoice("keep")}
+                disabled={scheduling}
+              >
+                <Text
+                  style={[
+                    styles.secondaryButtonText,
+                    scheduling && styles.secondaryButtonTextDisabled,
+                  ]}
+                >
+                  Keep this time, I'll move the other event myself
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={dismissExternalConflict}
+                style={[styles.tertiaryButton, styles.modalFullWidthButton]}
+                disabled={scheduling}
+              >
+                <Text style={styles.tertiaryButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </>
   );
 }
@@ -2205,6 +2496,7 @@ function ScheduledCard({
 }) {
   const start = capture.planned_start ? new Date(capture.planned_start) : null;
   const end = capture.planned_end ? new Date(capture.planned_end) : null;
+  const reasonPreview = getScheduleReasonPreview(capture, 1)[0] ?? null;
 
   return (
     <View style={styles.captureCard}>
@@ -2212,9 +2504,15 @@ function ScheduledCard({
       <Text style={styles.captureMeta}>
         {start ? start.toLocaleString() : "Scheduled time unavailable"}
         {end
-          ? ` -> ${end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+          ? ` -> ${end.toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}`
           : ""}
       </Text>
+      {reasonPreview ? (
+        <Text style={styles.captureReasonPreview}>{reasonPreview}</Text>
+      ) : null}
       <View style={styles.captureActions}>
         <TouchableOpacity
           style={[
@@ -2261,15 +2559,22 @@ function ScheduledCard({
 function ScheduledSummaryCard({ capture }: { capture: Capture }) {
   const start = capture.planned_start ? new Date(capture.planned_start) : null;
   const end = capture.planned_end ? new Date(capture.planned_end) : null;
+  const reasonPreview = getScheduleReasonPreview(capture, 1)[0] ?? null;
   return (
     <View style={styles.captureCard}>
       <Text style={styles.captureTitle}>{capture.content}</Text>
       <Text style={styles.captureMeta}>
         {start ? start.toLocaleString() : "Scheduled time unavailable"}
         {end
-          ? ` -> ${end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} `
+          ? ` -> ${end.toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })} `
           : ""}
       </Text>
+      {reasonPreview ? (
+        <Text style={styles.captureReasonPreview}>{reasonPreview}</Text>
+      ) : null}
       <TouchableOpacity
         style={styles.whyLink}
         onPress={() => showScheduleWhy(capture)}
@@ -2395,9 +2700,31 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  sectionHeaderCopy: {
+    flex: 1,
+    gap: 4,
+  },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: "#111827" },
   sectionSubtext: { color: "#475569" },
   sectionSubtitle: { fontSize: 16, fontWeight: "700", color: "#111827" },
+  inlineLinkButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  inlineLinkText: {
+    color: "#0F172A",
+    fontWeight: "700",
+  },
   disclosureRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2513,11 +2840,18 @@ const styles = StyleSheet.create({
   captureTitle: { fontSize: 16, fontWeight: "600", color: "#111827" },
   captureTitleFlex: { flex: 1 },
   captureMeta: { color: "#475569" },
+  captureReasonPreview: {
+    color: "#334155",
+    lineHeight: 20,
+  },
   captureActions: {
     flexDirection: "row",
     gap: 12,
     marginTop: 12,
     flexWrap: "wrap",
+  },
+  snapshotFooter: {
+    gap: 12,
   },
   whyLink: { alignSelf: "flex-start", marginTop: 8 },
   whyText: { color: "#334155", fontWeight: "600" },
@@ -2550,6 +2884,15 @@ const styles = StyleSheet.create({
   followUpTitle: { fontSize: 18, fontWeight: "800", color: "#111827" },
   followUpPrompt: { color: "#475569" },
   followUpHint: { color: "#6B7280", fontSize: 12 },
+  conflictSummaryList: {
+    gap: 6,
+  },
+  conflictChoiceStack: {
+    gap: 10,
+  },
+  modalFullWidthButton: {
+    width: "100%",
+  },
   followUpInput: {
     borderWidth: 1,
     borderColor: "#CBD5E1",

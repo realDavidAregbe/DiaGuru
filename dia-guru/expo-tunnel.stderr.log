@@ -1,0 +1,57 @@
+2026-04-08T17:21:54.448Z expo:telemetry Switching strategy from detached to instant
+2026-04-08T17:21:54.928Z expo:telemetry Recording 1 event(s)
+2026-04-08T17:21:54.945Z expo:env Loaded environment variables from: C:\Users\aregb\Documents\Project\DiaGuru\dia-guru\.env
+2026-04-08T17:21:54.948Z expo:env C:\Users\aregb\Documents\Project\DiaGuru\dia-guru\.env.development does not exist, skipping this env file
+2026-04-08T17:21:54.950Z expo:env C:\Users\aregb\Documents\Project\DiaGuru\dia-guru\.env.local does not exist, skipping this env file
+2026-04-08T17:21:54.951Z expo:env C:\Users\aregb\Documents\Project\DiaGuru\dia-guru\.env.development.local does not exist, skipping this env file
+2026-04-08T17:21:54.958Z expo:env "DEEPSEEK_API_KEY" is already defined and IS NOT overwritten
+2026-04-08T17:21:55.702Z expo:prebuild-config:expo-splash-screen:ios config: {
+  image: './assets/images/splash-icon.png',
+  imageWidth: 200,
+  resizeMode: 'contain',
+  backgroundColor: '#ffffff',
+  dark: { backgroundColor: '#000000' }
+}
+2026-04-08T17:21:55.794Z expo:utils:fileNotifier Observing C:\Users\aregb\Documents\Project\DiaGuru\dia-guru\babel.config.js
+2026-04-08T17:21:55.817Z expo:prebuild-config:expo-splash-screen:ios config: {
+  image: './assets/images/splash-icon.png',
+  imageWidth: 200,
+  resizeMode: 'contain',
+  backgroundColor: '#ffffff',
+  dark: { backgroundColor: '#000000' }
+}
+2026-04-08T17:21:56.452Z expo:start:server:devServer Stopping dev server (bundler: metro)
+2026-04-08T17:21:56.453Z expo:start:server:devServer Stopped dev server (bundler: metro)
+2026-04-08T17:21:56.529Z expo:prebuild-config:expo-splash-screen:ios config: {
+  image: './assets/images/splash-icon.png',
+  imageWidth: 200,
+  resizeMode: 'contain',
+  backgroundColor: '#ffffff',
+  dark: { backgroundColor: '#000000' }
+}
+2026-04-08T17:21:56.554Z expo:start:server:metro:router Using app as the root directory for Expo Router.
+2026-04-08T17:21:58.102Z expo:metro:config react-native-reanimated package.json: C:\Users\aregb\Documents\Project\DiaGuru\dia-guru\node_modules\react-native-reanimated\package.json
+2026-04-08T17:21:58.111Z expo:metro:config react-native-worklets package.json: C:\Users\aregb\Documents\Project\DiaGuru\dia-guru\node_modules\react-native-worklets\package.json
+2026-04-08T17:21:58.753Z expo:metro:withMetroResolvers Appending 8 custom resolvers to Metro config. (has custom resolver: false)
+2026-04-08T17:21:59.134Z expo:start:server:urlCreator URL: http://127.0.0.1:8088
+2026-04-08T17:21:59.777Z expo:prebuild-config:expo-splash-screen:ios config: {
+  image: './assets/images/splash-icon.png',
+  imageWidth: 200,
+  resizeMode: 'contain',
+  backgroundColor: '#ffffff',
+  dark: { backgroundColor: '#000000' }
+}
+2026-04-08T17:21:59.786Z expo:start:server:middleware:serveStatic Serving static files from: C:\Users\aregb\Documents\Project\DiaGuru\dia-guru\public
+2026-04-08T17:21:59.820Z expo:start:server:devServer [tunnel] connect to port: 8088
+2026-04-08T17:22:00.278Z expo:start:platforms:android:adbReverse Failed to resolve the Android SDK path, skipping ADB: Failed to resolve the Android SDK path. Default install location not found: C:\Users\aregb\AppData\Local\Android\Sdk. Use ANDROID_HOME to set the Android SDK location.
+2026-04-08T17:22:00.279Z expo:start:server:ngrok Stopping Tunnel
+2026-04-08T17:22:00.280Z expo:start:server:ngrok Global config path: C:\Users\aregb\.expo\ngrok.yml
+2026-04-08T17:22:03.589Z expo:start:server:ngrok Hostname: pHZrvJg-aregbed-8088.exp.direct
+2026-04-08T17:22:10.468Z expo:start:server:ngrok Stopping Tunnel
+2026-04-08T17:22:10.468Z expo:start:server:ngrok Global config path: C:\Users\aregb\.expo\ngrok.yml
+2026-04-08T17:22:18.362Z expo:start:server:ngrok Hostname: pHZrvJg-aregbed-8088.exp.direct
+CommandError: ngrok tunnel took too long to connect.
+CommandError: ngrok tunnel took too long to connect.
+    at Timeout._onTimeout (C:\Users\aregb\Documents\Project\DiaGuru\dia-guru\node_modules\expo\node_modules\@expo\cli\src\utils\delay.ts:52:14)
+    at listOnTimeout (node:internal/timers:588:17)
+    at processTimers (node:internal/timers:523:7)
