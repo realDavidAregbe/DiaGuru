@@ -523,13 +523,13 @@ function ExternalEventRow({ event }: { event: SimpleEvent }) {
         </Text>
         <View style={[styles.pill, styles.pillNeutral]}>
           <Text style={[styles.pillText, styles.pillTextNeutral]}>
-            External
+            Google Calendar
           </Text>
         </View>
       </View>
       <Text style={styles.eventTime}>{timeLabel}</Text>
       <Text style={styles.externalHint}>
-        DiaGuru reads this as context and leaves it untouched.
+        Imported from Google Calendar. DiaGuru won’t change it.
       </Text>
     </View>
   );
