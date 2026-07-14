@@ -20,11 +20,10 @@ import {
   undoPlan,
 } from "@/lib/capture";
 import {
-  extractScheduleReasons,
   formatCaptureScheduleSummary,
   formatIsoLabel,
-  getScheduleReasonPreview,
 } from "@/lib/schedule-insights";
+import { deriveTodayPlan, TodayPrimaryState } from "@/lib/today-plan";
 import {
   type CalendarHealth,
   connectGoogleCalendar,
@@ -351,12 +350,6 @@ function normalizeDisplayTitle(value: unknown) {
   if (typeof value !== "string") return null;
   const flattened = value.replace(/\s+/g, " ").trim();
   return flattened.length > 0 ? flattened : null;
-}
-
-function showScheduleWhy(capture: Capture) {
-  const reasons = extractScheduleReasons(capture);
-  const body = reasons.map((reason) => `- ${reason}`).join("\n");
-  Alert.alert("Why this time?", body);
 }
 
 function summarizePlan(plan: PlanSummary) {
@@ -916,6 +909,8 @@ export default function HomeTab() {
     useState<ExternalConflictState | null>(null);
   const [captureDetailsOpen, setCaptureDetailsOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
+  const [startedCaptureId, setStartedCaptureId] = useState<string | null>(null);
+  const [clockNow, setClockNow] = useState(() => new Date());
 
   const [refreshing, setRefreshing] = useState(false);
   const [scheduling, setScheduling] = useState(false);
@@ -926,6 +921,11 @@ export default function HomeTab() {
   const reminderSyncingRef = useRef(false);
   const calendarHealthRequestRef = useRef(false);
   const [reminderLoaded, setReminderLoaded] = useState(false);
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -1890,42 +1890,13 @@ export default function HomeTab() {
     userId,
   ]);
 
-  const overdueScheduled = useMemo(
-    () =>
-      scheduled.filter(
-        (capture) =>
-          capture.status === "scheduled" &&
-          capture.planned_end &&
-          new Date(capture.planned_end).getTime() <= Date.now(),
-      ),
-    [scheduled],
-  );
-
-  const upcomingScheduled = useMemo(
-    () =>
-      scheduled.filter(
-        (capture) =>
-          capture.status === "scheduled" &&
-          capture.planned_start &&
-          new Date(capture.planned_start).getTime() > Date.now(),
-      ),
-    [scheduled],
+  const todayPlan = useMemo(
+    () => deriveTodayPlan(scheduled, clockNow),
+    [clockNow, scheduled],
   );
 
   const pendingPreview = useMemo(() => pending.slice(0, 1), [pending]);
   const queueExtras = Math.max(0, pending.length - pendingPreview.length);
-  const overduePreview = useMemo(
-    () => overdueScheduled.slice(0, 1),
-    [overdueScheduled],
-  );
-  const nextUpcomingCapture = useMemo(
-    () => upcomingScheduled[0] ?? null,
-    [upcomingScheduled],
-  );
-  const remainingUpcomingCount = Math.max(
-    0,
-    upcomingScheduled.length - (nextUpcomingCapture ? 1 : 0),
-  );
   const followUpVisible = Boolean(followUpState);
   const externalConflictVisible = Boolean(externalConflictState);
   const externalConflictSlotLabel = externalConflictState
@@ -1956,6 +1927,9 @@ export default function HomeTab() {
       try {
         if (action === "completed") {
           await invokeCaptureCompletion(capture.id, "complete");
+          setStartedCaptureId((current) =>
+            current === capture.id ? null : current,
+          );
           setStatusNotice({
             tone: "success",
             title: "Marked complete",
@@ -1988,17 +1962,26 @@ export default function HomeTab() {
     ],
   );
 
+  const handleStartCapture = useCallback((capture: Capture) => {
+    setStartedCaptureId(capture.id);
+    setStatusNotice({
+      tone: "info",
+      title: "Focus started",
+      message: `You are working on "${capture.content}" now.`,
+    });
+  }, []);
+
   const captureForm = (
     <View style={styles.captureSection}>
-      <Text style={styles.sectionTitle}>Capture</Text>
+      <Text style={styles.sectionTitle}>Quick add</Text>
       <Text style={styles.sectionSubtext}>
-        Add one task and let DiaGuru place it around your day.
+        Tell DiaGuru what you need to get done.
       </Text>
 
       <TextInput
         value={idea}
         onChangeText={setIdea}
-        placeholder="What needs your attention?"
+        placeholder="What do you need to get done?"
         placeholderTextColor="#9CA3AF"
         multiline
         style={styles.ideaInput}
@@ -2073,7 +2056,7 @@ export default function HomeTab() {
         disabled={submitting}
       >
         <Text style={styles.primaryButtonText}>
-          {submitting ? "Saving..." : "Save and schedule"}
+          {submitting ? "Adding..." : "Add to my day"}
         </Text>
       </TouchableOpacity>
 
@@ -2093,7 +2076,7 @@ export default function HomeTab() {
             activeOpacity={0.85}
           >
             <View style={styles.disclosureCopy}>
-              <Text style={styles.disclosureTitle}>Queue</Text>
+              <Text style={styles.disclosureTitle}>Unscheduled</Text>
               <Text style={styles.disclosureSummary}>
                 {pending.length} {pending.length === 1 ? "item" : "items"}{" "}
                 waiting
@@ -2123,7 +2106,7 @@ export default function HomeTab() {
                         styles.secondaryButtonTextDisabled,
                     ]}
                   >
-                    Re-run scheduling
+                    Plan my day
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -2138,7 +2121,7 @@ export default function HomeTab() {
                 <Text style={styles.sectionSubtext}>
                   {`+ ${queueExtras} more ${
                     queueExtras === 1 ? "item" : "items"
-                  } in queue`}
+                  } waiting to be planned`}
                 </Text>
               ) : null}
             </View>
@@ -2148,14 +2131,17 @@ export default function HomeTab() {
     </View>
   );
 
-  const scheduledSection = (
-    <View style={styles.captureSection}>
+  const todaySection = (
+    <View style={styles.todaySection}>
       <View style={styles.sectionHeaderRow}>
         <View style={styles.sectionHeaderCopy}>
-          <Text style={styles.sectionTitle}>Schedule snapshot</Text>
-          <Text style={styles.sectionSubtext}>
-            Home stays focused on capture. Use Calendar for the full schedule
-            and reasoning.
+          <Text style={styles.todayEyebrow}>Today</Text>
+          <Text style={styles.todayDate}>
+            {clockNow.toLocaleDateString([], {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}
           </Text>
         </View>
         <TouchableOpacity
@@ -2170,52 +2156,45 @@ export default function HomeTab() {
         <ActivityIndicator />
       ) : scheduledError ? (
         <Text style={styles.errorText}>{scheduledError}</Text>
-      ) : scheduled.length === 0 ? (
-        <Text style={styles.sectionSubtext}>
-          No DiaGuru sessions on the calendar yet.
-        </Text>
+      ) : !todayPlan.primary ? (
+        <View style={styles.todayEmptyState}>
+          <Text style={styles.todayEmptyTitle}>You&apos;re done for today</Text>
+          <Text style={styles.sectionSubtext}>
+            Nothing else is scheduled. Add something below if you want DiaGuru
+            to find time for it.
+          </Text>
+        </View>
       ) : (
         <>
-          {overdueScheduled.length > 0 && (
-            <View style={{ gap: 12 }}>
-              <Text style={styles.sectionSubtitle}>Needs check-in</Text>
-              {overduePreview.map((capture) => (
-                <ScheduledCard
-                  key={capture.id}
-                  capture={capture}
-                  pendingAction={actionCaptureId === capture.id}
-                  onComplete={() =>
-                    handleCompletionAction(capture, "completed")
-                  }
-                  onReschedule={() =>
-                    handleCompletionAction(capture, "reschedule")
-                  }
-                />
-              ))}
-              {overdueScheduled.length > overduePreview.length ? (
-                <Text style={styles.sectionSubtext}>
-                  {`+ ${
-                    overdueScheduled.length - overduePreview.length
-                  } more awaiting confirmation`}
-                </Text>
-              ) : null}
-            </View>
-          )}
+          <TodayPrimaryCard
+            capture={todayPlan.primary}
+            state={
+              startedCaptureId === todayPlan.primary.id
+                ? "now"
+                : todayPlan.primaryState
+            }
+            started={startedCaptureId === todayPlan.primary.id}
+            pendingAction={actionCaptureId === todayPlan.primary.id}
+            onStart={() => handleStartCapture(todayPlan.primary!)}
+            onComplete={() =>
+              handleCompletionAction(todayPlan.primary!, "completed")
+            }
+            onMove={() =>
+              handleCompletionAction(todayPlan.primary!, "reschedule")
+            }
+          />
 
-          {nextUpcomingCapture && (
-            <View style={{ gap: 12 }}>
-              <Text style={styles.sectionSubtitle}>Up next</Text>
-              <ScheduledSummaryCard capture={nextUpcomingCapture} />
-              <View style={styles.snapshotFooter}>
-                <Text style={styles.sectionSubtext}>
-                  {remainingUpcomingCount > 0
-                    ? `+ ${remainingUpcomingCount} more ${
-                        remainingUpcomingCount === 1 ? "session" : "sessions"
-                      } on your calendar`
-                    : "Calendar has the full sequence and external context."}
-                </Text>
-              </View>
+          {todayPlan.laterToday.length > 0 ? (
+            <View style={styles.laterSection}>
+              <Text style={styles.sectionSubtitle}>Later today</Text>
+              {todayPlan.laterToday.map((capture) => (
+                <LaterTodayRow key={capture.id} capture={capture} />
+              ))}
             </View>
+          ) : (
+            <Text style={styles.sectionSubtext}>
+              Nothing else is scheduled after this.
+            </Text>
           )}
         </>
       )}
@@ -2290,26 +2269,7 @@ export default function HomeTab() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
         >
-          <View style={styles.heroCard}>
-            <View style={styles.heroCompactHeader}>
-              <View style={styles.heroCopy}>
-                <Text style={styles.heroEyebrow}>DiaGuru</Text>
-                <Text style={styles.heroTitle}>
-                  Capture one thing, then get back to work.
-                </Text>
-              </View>
-              <View style={styles.heroBadge}>
-                <Text style={styles.heroBadgeLabel}>Local time</Text>
-                <Text style={styles.heroBadgeValue}>{timezone}</Text>
-              </View>
-            </View>
-            <Text style={styles.heroSubtitle}>
-              Add the next task, set the basics, and let DiaGuru place it around
-              the rest of your day.
-            </Text>
-          </View>
-          {feedbackSection}
-          {captureForm}
+          {todaySection}
           <CalendarHealthNotice
             health={calendarHealth}
             error={calendarHealthError}
@@ -2317,7 +2277,8 @@ export default function HomeTab() {
             onReconnect={handleReconnectCalendar}
             onRetry={refreshCalendarHealth}
           />
-          {scheduledSection}
+          {feedbackSection}
+          {captureForm}
         </ScrollView>
       </SafeAreaView>
 
@@ -2332,7 +2293,7 @@ export default function HomeTab() {
           style={styles.followUpBackdrop}
         >
           <View style={styles.followUpCard}>
-            <Text style={styles.followUpTitle}>DeepSeek asks</Text>
+            <Text style={styles.followUpTitle}>One quick question</Text>
             <Text style={styles.followUpPrompt}>
               {followUpState?.prompt ??
                 "Please answer the assistant\u2019s question."}
@@ -2444,7 +2405,7 @@ export default function HomeTab() {
                     scheduling && styles.secondaryButtonTextDisabled,
                   ]}
                 >
-                  Keep this time, I'll move the other event myself
+                  Keep this time, I&apos;ll move the other event myself
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -2483,104 +2444,108 @@ function CaptureCard({ capture, rank }: { capture: Capture; rank: number }) {
   );
 }
 
-function ScheduledCard({
-  capture,
-  pendingAction,
-  onComplete,
-  onReschedule,
-}: {
-  capture: Capture;
-  pendingAction: boolean;
-  onComplete: () => void;
-  onReschedule: () => void;
-}) {
+function formatTaskTime(capture: Capture) {
   const start = capture.planned_start ? new Date(capture.planned_start) : null;
   const end = capture.planned_end ? new Date(capture.planned_end) : null;
-  const reasonPreview = getScheduleReasonPreview(capture, 1)[0] ?? null;
+  if (!start || Number.isNaN(start.getTime())) return "Time unavailable";
+
+  const startText = start.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const endText =
+    end && !Number.isNaN(end.getTime())
+      ? end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+      : null;
+  return endText ? `${startText}–${endText}` : startText;
+}
+
+function TodayPrimaryCard({
+  capture,
+  state,
+  started,
+  pendingAction,
+  onStart,
+  onComplete,
+  onMove,
+}: {
+  capture: Capture;
+  state: TodayPrimaryState | null;
+  started: boolean;
+  pendingAction: boolean;
+  onStart: () => void;
+  onComplete: () => void;
+  onMove: () => void;
+}) {
+  const label = state === "now" ? "Now" : state === "check_in" ? "Check in" : "Up next";
 
   return (
-    <View style={styles.captureCard}>
-      <Text style={styles.captureTitle}>{capture.content}</Text>
-      <Text style={styles.captureMeta}>
-        {start ? start.toLocaleString() : "Scheduled time unavailable"}
-        {end
-          ? ` -> ${end.toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}`
-          : ""}
-      </Text>
-      {reasonPreview ? (
-        <Text style={styles.captureReasonPreview}>{reasonPreview}</Text>
-      ) : null}
-      <View style={styles.captureActions}>
-        <TouchableOpacity
-          style={[
-            styles.primaryButton,
-            { flex: 1 },
-            pendingAction && styles.primaryButtonDisabled,
-          ]}
-          onPress={onComplete}
-          disabled={pendingAction}
-        >
-          <Text style={styles.primaryButtonText}>
-            {pendingAction ? "Updating..." : "Completed"}
-          </Text>
-        </TouchableOpacity>
+    <View style={styles.primaryTaskCard}>
+      <Text style={styles.primaryTaskLabel}>{label}</Text>
+      <Text style={styles.primaryTaskTitle}>{capture.content}</Text>
+      <Text style={styles.primaryTaskTime}>{formatTaskTime(capture)}</Text>
+      <View style={styles.primaryTaskActions}>
+        {state !== "check_in" ? (
+          <TouchableOpacity
+            style={[
+              styles.primaryButton,
+              styles.taskActionButton,
+              styles.startButton,
+              (pendingAction || started) && styles.primaryButtonDisabled,
+            ]}
+            onPress={onStart}
+            disabled={pendingAction || started}
+          >
+            <Text style={styles.startButtonText}>
+              {started ? "Started" : "Start"}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity
           style={[
             styles.secondaryButton,
-            { flex: 1 },
+            styles.taskActionButton,
+            styles.moveButton,
             pendingAction && styles.primaryButtonDisabled,
           ]}
-          onPress={onReschedule}
+          onPress={onMove}
           disabled={pendingAction}
         >
           <Text
             style={[
               styles.secondaryButtonText,
+              styles.moveButtonText,
               pendingAction && styles.secondaryButtonTextDisabled,
             ]}
           >
-            Reschedule
+            Move
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.doneButton,
+            styles.taskActionButton,
+            pendingAction && styles.primaryButtonDisabled,
+          ]}
+          onPress={onComplete}
+          disabled={pendingAction}
+        >
+          <Text style={styles.doneButtonText}>
+            {pendingAction ? "Updating..." : "Done"}
           </Text>
         </TouchableOpacity>
       </View>
-      <TouchableOpacity
-        style={styles.whyLink}
-        onPress={() => showScheduleWhy(capture)}
-      >
-        <Text style={styles.whyText}>Why this time?</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
-function ScheduledSummaryCard({ capture }: { capture: Capture }) {
-  const start = capture.planned_start ? new Date(capture.planned_start) : null;
-  const end = capture.planned_end ? new Date(capture.planned_end) : null;
-  const reasonPreview = getScheduleReasonPreview(capture, 1)[0] ?? null;
+function LaterTodayRow({ capture }: { capture: Capture }) {
   return (
-    <View style={styles.captureCard}>
-      <Text style={styles.captureTitle}>{capture.content}</Text>
-      <Text style={styles.captureMeta}>
-        {start ? start.toLocaleString() : "Scheduled time unavailable"}
-        {end
-          ? ` -> ${end.toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })} `
-          : ""}
+    <View style={styles.laterRow}>
+      <Text style={styles.laterTime}>{formatTaskTime(capture)}</Text>
+      <Text style={styles.laterTitle} numberOfLines={2}>
+        {capture.content}
       </Text>
-      {reasonPreview ? (
-        <Text style={styles.captureReasonPreview}>{reasonPreview}</Text>
-      ) : null}
-      <TouchableOpacity
-        style={styles.whyLink}
-        onPress={() => showScheduleWhy(capture)}
-      >
-        <Text style={styles.whyText}>Why this time?</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -2699,6 +2664,122 @@ const styles = StyleSheet.create({
     gap: 16,
     borderWidth: 1,
     borderColor: "#E2E8F0",
+  },
+  todaySection: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 16,
+    gap: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  todayEyebrow: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  todayDate: {
+    color: "#111827",
+    fontSize: 22,
+    fontWeight: "800",
+  },
+  todayEmptyState: {
+    borderRadius: 16,
+    padding: 18,
+    gap: 6,
+    backgroundColor: "#F8FAFC",
+  },
+  todayEmptyTitle: {
+    color: "#111827",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  primaryTaskCard: {
+    borderRadius: 18,
+    padding: 18,
+    gap: 8,
+    backgroundColor: "#111827",
+  },
+  primaryTaskLabel: {
+    color: "#CBD5E1",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  primaryTaskTitle: {
+    color: "#FFFFFF",
+    fontSize: 24,
+    fontWeight: "800",
+    lineHeight: 30,
+  },
+  primaryTaskTime: {
+    color: "#E2E8F0",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  primaryTaskActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 10,
+  },
+  taskActionButton: {
+    flexGrow: 1,
+    minWidth: 84,
+    paddingHorizontal: 14,
+  },
+  startButton: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 0,
+  },
+  startButtonText: {
+    color: "#111827",
+    fontWeight: "800",
+  },
+  moveButton: {
+    backgroundColor: "#1E293B",
+    borderColor: "#475569",
+  },
+  moveButtonText: {
+    color: "#FFFFFF",
+  },
+  doneButton: {
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#DCFCE7",
+  },
+  doneButtonText: {
+    color: "#166534",
+    fontWeight: "800",
+  },
+  laterSection: {
+    gap: 8,
+  },
+  laterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minHeight: 52,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#E2E8F0",
+  },
+  laterTime: {
+    width: 112,
+    color: "#475569",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  laterTitle: {
+    flex: 1,
+    color: "#111827",
+    fontSize: 15,
+    fontWeight: "600",
   },
   sectionHeaderRow: {
     flexDirection: "row",

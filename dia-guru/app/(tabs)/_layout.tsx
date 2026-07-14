@@ -6,7 +6,7 @@ export default function TabsLayout() {
     <Tabs screenOptions={{ headerShown: false }}>
       <Tabs.Screen
         name="index"
-        options={{ title: 'Home', tabBarIcon: ({ color, size }) => <MaterialIcons name="home" size={size} color={color} /> }}
+        options={{ title: 'Today', tabBarIcon: ({ color, size }) => <MaterialIcons name="today" size={size} color={color} /> }}
       />
       <Tabs.Screen
         name="calendar"
